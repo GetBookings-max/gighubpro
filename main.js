@@ -1,0 +1,2260 @@
+if(location.hostname!=="localhost")console.log=()=>{};
+
+const PRICE_PER_ACCESS = 14.99;
+const PRICE_PER_BOOST  = 4.99;
+
+// ── LOCAL PLATFORMS DATA ─────────────────────────────────────────
+// SEGURANÇA: P começa vazio. Os dados são carregados pelo Supabase
+// após validação do token em validarTokenSupabase().
+// Nunca coloques dados aqui — qualquer pessoa pode ver o código-fonte.
+var P = [];
+
+// Session state — set to true after successful Supabase token validation
+var hasAccess = false;
+
+
+// ══ CRYPTO ══════════════════════════════════════════════════════
+async function _sha256hex(str){
+  const b=await crypto.subtle.digest('SHA-256',new TextEncoder().encode(str));
+  return Array.from(new Uint8Array(b)).map(x=>x.toString(16).padStart(2,'0')).join('');
+}
+
+
+
+
+// ══ AUTH ════════════════════════════════════════════════════════
+
+async function unlock(){
+  const v=document.getElementById('lockInput').value;
+  if(!v) return;
+  const btn=document.getElementById('lockBtn');
+  const t=translations[currentLang]||translations['pt'];
+  const orig=btn.textContent;
+  btn.textContent=t.lockVerifying||'A verificar…'; btn.disabled=true;
+  // Sanitise and enforce minimum length of 6 chars
+  const cleanToken = v.trim().replace(/[^a-zA-Z0-9_\-]/g,'').substring(0,64);
+  if(cleanToken.length >= 6) await validarTokenSupabase(cleanToken);
+  btn.textContent=orig; btn.disabled=false;
+}
+
+function showPasswordMode(){
+  const t=translations[currentLang]||translations['pt'];
+  const lbl=document.getElementById('lockLabel');
+  if(lbl) lbl.textContent=t.lockAccessCode||'Chave de acesso';
+  document.getElementById('lockInput').style.display='block';
+  document.getElementById('lockBtn').style.display='block';
+  document.getElementById('lockBtn').textContent=t.lockEnter||'Entrar →';
+  document.getElementById('lockHint').textContent=t.lockHintText||'Chave enviada após confirmação de pagamento';
+}
+function showAdminLogin(){
+  const lbl=document.getElementById('lockLabel');
+  if(lbl) lbl.textContent='🔑 Acesso Admin';
+  document.getElementById('lockInput').style.display='block';
+  document.getElementById('lockBtn').textContent='Entrar como Admin →';
+  document.getElementById('lockBtn').style.display='block';
+  document.getElementById('lockHint').textContent='Área restrita — só para o criador';
+}
+function showBlocked(){
+  const t=translations[currentLang]||translations['pt'];
+  const lbl=document.getElementById('lockLabel');
+  if(lbl){lbl.textContent=t.lockRevoked||'🚫 Acesso revogado';lbl.style.color='rgba(192,57,43,.8)';}
+  document.getElementById('lockErr').textContent=t.lockRevokedMsg||'Esta chave foi desativada.';
+}
+function grantAccess(){
+  document.getElementById('lockScreen').classList.add('unlocked');
+  document.body.style.overflow='';
+  setTimeout(()=>{
+    document.getElementById('lockScreen').style.display='none';
+    if(!localStorage.getItem('gh_welcomed')){
+      localStorage.setItem('gh_welcomed','1');
+      document.getElementById('welcomeModal').style.display='flex';
+      if(typeof applyLang==='function') applyLang();
+    }
+  },600);
+}
+// lockInput keydown listener moved to _bindEvents()
+
+// ══ PAINEL ADMIN — GOOGLE SHEETS ════════════════════════════════
+// A gestão de tokens é feita directamente na tua Google Sheet.
+// O painel admin mostra o link directo para a sheet.
+
+let _GS_SHEET_URL = localStorage.getItem('gh_sheet_url') || '';
+
+
+function admRender(){
+  document.getElementById('adm-total').textContent='—';
+  document.getElementById('adm-revenue').textContent='—';
+  document.getElementById('adm-revoked').textContent='—';
+
+  const container=document.getElementById('adm-list');
+  const sheetUrl=localStorage.getItem('gh_sheet_url')||'';
+  // Security: only allow Google Sheets URLs to prevent self-XSS via javascript: schemes
+  const safeSheetUrl = (sheetUrl.startsWith('https://docs.google.com/spreadsheets/') || sheetUrl.startsWith('https://docs.google.com/')) ? sheetUrl : '';
+  // Use escHtml for proper attribute-context escaping (not just quote replacement)
+  const safeSheetUrlEncoded = safeSheetUrl ? escHtml(safeSheetUrl) : '';
+
+  container.innerHTML=`
+  <div style="background:var(--green-pale);border:1.5px solid rgba(45,122,79,.3);border-radius:12px;padding:20px 18px;margin-bottom:16px">
+    <div style="font-size:13px;font-weight:700;color:var(--green);margin-bottom:10px">✅ Tokens geridos na Google Sheet</div>
+    <div style="font-size:12px;color:var(--grey);line-height:1.7;margin-bottom:14px">
+      Para <strong>criar token</strong>: abre a sheet, adiciona linha <code style="background:var(--cream);padding:1px 5px;border-radius:4px">token | nome | TRUE</code><br>
+      Para <strong>revogar</strong>: muda <code style="background:var(--cream);padding:1px 5px;border-radius:4px">TRUE</code> para <code style="background:var(--red-pale);padding:1px 5px;border-radius:4px;color:var(--red)">FALSE</code><br>
+      Alterações têm efeito <strong>imediato</strong> — sem upload de ficheiro.
+    </div>
+    ${safeSheetUrlEncoded
+      ? `<a href="${safeSheetUrlEncoded}" target="_blank" rel="noopener noreferrer" style="display:inline-flex;align-items:center;gap:8px;height:40px;padding:0 18px;border-radius:8px;background:var(--green);color:#fff;text-decoration:none;font-size:13px;font-weight:700">
+           📊 Abrir Google Sheet →
+         </a>`
+      : `<div style="font-size:12px;color:var(--amber);background:var(--amber-pale);border:1px solid rgba(212,130,10,.3);border-radius:8px;padding:10px 12px;margin-bottom:10px">
+           ⚠️ Cola aqui o link da tua Google Sheet para acesso rápido:
+         </div>
+         <div style="display:flex;gap:8px">
+           <input id="sheetUrlInput" type="url" placeholder="https://docs.google.com/spreadsheets/d/..." style="flex:1;height:36px;border:1px solid var(--border-md);border-radius:8px;padding:0 10px;font-size:12px;font-family:'Instrument Sans',sans-serif">
+           <button data-action="saveSheetUrl" style="height:36px;padding:0 14px;border-radius:8px;border:none;background:var(--green);color:#fff;font-size:12px;font-weight:600;cursor:pointer">Guardar</button>
+         </div>`
+    }
+  </div>
+
+  <div style="background:var(--cream);border:1px solid var(--border);border-radius:10px;padding:16px 18px">
+    <div style="font-size:11px;font-weight:700;color:var(--grey);letter-spacing:.06em;text-transform:uppercase;margin-bottom:10px">🔗 Link base para clientes</div>
+    <div style="font-size:12px;color:var(--grey);margin-bottom:8px">Adiciona o token gerado por ti no fim do URL:</div>
+    <code style="font-size:12px;background:#fff;border:1px solid var(--border-md);border-radius:6px;padding:8px 10px;display:block;word-break:break-all;color:var(--ink)">
+      ${window.location.origin}${window.location.pathname}<strong>#key=TOKEN_AQUI</strong>
+    </code>
+    <button data-action="copyBaseLink" style="margin-top:8px;height:30px;padding:0 12px;border-radius:6px;border:1px solid var(--border-md);background:transparent;font-size:11px;cursor:pointer;font-family:'Instrument Sans',sans-serif">📋 Copiar base do link</button>
+  </div>`;
+}
+
+function saveSheetUrl(){
+  const val=document.getElementById('sheetUrlInput')?.value.trim();
+  // Strict validation: must be a Google Sheets URL with no suspicious characters
+  if(val && val.startsWith('https://docs.google.com/spreadsheets/') && /^https:\/\/docs\.google\.com\/spreadsheets\/[^\s<>"']+$/.test(val)){
+    localStorage.setItem('gh_sheet_url', val.substring(0, 500)); // cap length
+    admRender();
+  }
+}
+
+// ══ UTILS ═══════════════════════════════════════════════════════
+function saveAffLinks(a){ localStorage.setItem('gh_aff',JSON.stringify(a)); }
+function getAffLinks(){ return JSON.parse(localStorage.getItem('gh_aff')||'{}'); }
+function initWebhookUI(){
+  const inp=document.getElementById('adm-webhook-url');
+  if(inp){inp.value=getAlertWebhook();updateWebhookStatus();}
+}
+
+let favs = (() => { try { const v = JSON.parse(localStorage.getItem('gh_favs')||'[]'); return Array.isArray(v) ? v.filter(x=>typeof x==='string' && x.length < 200) : []; } catch(e){ return []; } })();
+let showFavsOnly=false;
+function toggleFav(name,e){
+  e.stopPropagation();
+  if(favs.includes(name)) favs=favs.filter(f=>f!==name); else favs.push(name);
+  localStorage.setItem('gh_favs',JSON.stringify(favs));
+  document.getElementById('favCount').textContent=favs.length;
+  render();
+}
+function toggleFavView(){
+  showFavsOnly=!showFavsOnly;
+  const t=translations[currentLang]||translations['pt'];
+  const favBtn=document.getElementById('favBtn');
+  if(favBtn) favBtn.innerHTML=t.navFavs+' (<span id="favCount">'+favs.length+'</span>)';
+  const btn=document.getElementById('favBtn');
+  btn.style.background=showFavsOnly?'var(--ink)':'';
+  btn.style.color=showFavsOnly?'var(--paper)':'';
+  btn.style.borderColor=showFavsOnly?'var(--ink)':'';
+  render();
+}
+function _applyCalcLang(){
+  const t = translations[currentLang]||translations['pt'];
+  const ids = {
+    calcTitleEl:'calcTitle', calcDescEl:'calcDesc',
+    calcHoursLabelEl:'calcHoursLabel', calcResultLabelEl:'calcResult',
+    calcTypeLabel:'calcTypeLabel'
+  };
+  Object.entries(ids).forEach(([id,key])=>{
+    const el=document.getElementById(id);
+    if(el && t[key]) el.textContent=t[key];
+  });
+  ['2','6','7','8','10','18'].forEach(v=>{
+    const el=document.getElementById('calcOpt'+v);
+    if(el && t['calcOpt'+v]) el.textContent=t['calcOpt'+v];
+  });
+  calcEarnings();
+}
+
+function _applyBoostPayLang(){
+  const t = translations[currentLang]||translations['pt'];
+  const set=(id,key,html)=>{
+    const el=document.getElementById(id);
+    if(el && t[key]!==undefined){ if(html) el.innerHTML=t[key]; else el.textContent=t[key]; }
+  };
+  set('boostPayTitleEl','boostPayTitle',false);
+  set('boostPaySubEl','boostPaySub',false);
+  set('boostPayLabelEl','boostPayLabel',false);
+  set('boostPayDescEl','boostPayDesc',false);
+  set('boostPayBtnEl','boostPayBtn',false);
+  set('boostPayInstrEl','boostPayInstr',true);
+  set('boostOpenFormBtn','boostOpenFormBtn',false);
+}
+
+function openCalc(){
+  document.getElementById('calcModal').style.display='flex';
+  _applyCalcLang();
+}
+function calcEarnings(){
+  const h=parseInt(document.getElementById('hoursRange').value);
+  const rate=parseInt(document.getElementById('calcType').value);
+  const t = translations[currentLang]||translations['pt'];
+  document.getElementById('hoursVal').textContent=h+'h';
+  // For UX interviews (rate=18): apply a realistic PT-availability factor (~0.15).
+  // Even if you set aside 10h/week, very few sessions are actually available in PT —
+  // capping the estimate prevents dangerously inflated expectations.
+  const _availFactor = rate === 18 ? 0.15 : 0.75;
+  document.getElementById('calcResult').textContent=Math.round(h*4*rate*_availFactor)+'€';
+  // Update all static labels every time calc runs (ensures correct lang on open)
+  const _s=(id,key)=>{const el=document.getElementById(id);if(el&&t[key])el.textContent=t[key];};
+  _s('calcTitleEl','calcTitle');
+  _s('calcDescEl','calcDesc');
+  _s('calcHoursLabelEl','calcHoursLabel');
+  // Update option labels
+  ['2','6','7','8','10','18'].forEach(v => {
+    const el=document.getElementById('calcOpt'+v);
+    if(el && t['calcOpt'+v]) el.textContent=t['calcOpt'+v];
+  });
+  // Update type label
+  const tl=document.getElementById('calcTypeLabel');
+  if(tl && t.calcTypeLabel) tl.textContent=t.calcTypeLabel;
+  // Update result label
+  const rl=document.getElementById('calcResultLabelEl');
+  if(rl && t.calcResult) rl.textContent=t.calcResult;
+  const sPT={2:'Prolific + Mobrog + AttaPoll.',6:'Uber Eats ou Bolt Food.',7:'DataAnnotation.tech + Clickworker.',8:'Rover + Zoowish + Babysits.pt.',10:'PeoplePerHour + Malt (plataformas europeias de freelance, mais acessíveis e com boa presença em PT).',18:'TestingTime (plataforma europeia de estudos de utilizador com projetos PT disponíveis — pagamento variável por sessão, seletivo).'};
+  const sEN={2:'Prolific + Mobrog + AttaPoll.',6:'Uber Eats or Bolt Food.',7:'DataAnnotation.tech + Clickworker.',8:'Rover + Zoowish + Babysits.',10:'PeoplePerHour + Malt (European freelance platforms, more accessible and with good PT presence).',18:'TestingTime (European user research platform with PT projects available — variable pay per session, selective).'};
+  const s = currentLang==='en' ? sEN : sPT;
+  const sugLabel = currentLang==='en' ? 'Suggestion' : 'Sugestão';
+  const estLabel = currentLang==='en' ? 'Conservative estimate · no guarantees' : 'Estimativa conservadora · sem garantias';
+  document.getElementById('calcSuggest').innerHTML='<div style="margin-bottom:4px;color:var(--grey)">'+estLabel+'</div>💡 <strong>'+sugLabel+':</strong> '+s[rate];
+  const rlEl=document.getElementById('calcResultLabelEl');
+  if(rlEl) rlEl.textContent=currentLang==='en'?'Monthly estimate':'Estimativa mensal';
+}
+
+// ── Boost tokens — managed in Supabase (NOT localStorage)
+// Legacy localStorage functions kept as stubs to avoid breaking any residual calls
+function getBoostTokens(){ return {}; }
+function saveBoostTokens(){ }
+
+// Migrate: remove any old localStorage boost tokens (one-time cleanup)
+(function _cleanLegacyBoostTokens(){
+  try { localStorage.removeItem('gh_boost_tokens'); } catch(e){}
+})();
+
+
+function genBoostToken(){
+  const c='ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+  let t='BOOST-'; for(let i=0;i<4;i++)t+=c[Math.floor(Math.random()*c.length)];
+  t+='-'; for(let i=0;i<4;i++)t+=c[Math.floor(Math.random()*c.length)]; return t;
+}
+function openBoostPay(){
+  document.getElementById('boostPayModal').style.display='flex';
+  _applyBoostPayLang();
+}
+function admRenderBoost(){
+  // Boost tokens are now managed entirely in Supabase (table: boost_tokens)
+  // This panel links to the Supabase dashboard for management
+  document.getElementById('adm-boost-total').textContent='(Supabase)';
+  document.getElementById('adm-boost-revenue').textContent='—';
+  document.getElementById('adm-boost-used').textContent='—';
+  const c=document.getElementById('adm-boost-list');
+  if(!c) return;
+  c.innerHTML=`
+  <div style="background:var(--green-pale);border:1.5px solid rgba(45,122,79,.3);border-radius:12px;padding:20px 18px;margin-bottom:12px">
+    <div style="font-size:13px;font-weight:700;color:var(--green);margin-bottom:8px">✅ Tokens GigBoost geridos no Supabase</div>
+    <div style="font-size:12px;color:var(--grey);line-height:1.7;margin-bottom:12px">
+      Para <strong>criar token</strong>: abre a tabela <code style="background:var(--cream);padding:1px 5px;border-radius:4px">boost_tokens</code> no Supabase e insere uma linha.<br>
+      Para <strong>revogar</strong>: muda <code style="background:var(--cream);padding:1px 5px;border-radius:4px">is_active</code> para <code style="background:var(--red-pale);padding:1px 5px;border-radius:4px;color:var(--red)">false</code>.<br>
+      Para <strong>ver usos</strong>: consulta a coluna <code style="background:var(--cream);padding:1px 5px;border-radius:4px">used_at</code>.
+    </div>
+    <div style="font-size:12px;color:var(--grey)">Acede ao Supabase Dashboard directamente no browser (não armazenado aqui por razões de segurança).</div>
+  </div>
+  <div style="background:var(--amber-pale);border:1px solid rgba(212,130,10,.3);border-radius:10px;padding:14px 16px;font-size:12px;color:var(--ink);line-height:1.6">
+    ⚠️ Os tokens antigos em localStorage foram automaticamente removidos na migração para Supabase.
+  </div>`;
+}
+function admAddBoostToken(){ const name=document.getElementById('adm-boost-name').value.trim()||'Cliente'; document.getElementById('adm-boost-name').value=''; const code=genBoostToken(); const t=getBoostTokens(); t[code]={name,created:new Date().toISOString(),revoked:false,used:false}; saveBoostTokens(t); document.getElementById('adm-boost-codetext').textContent=code; document.getElementById('adm-boost-newcode').style.display='block'; admRenderBoost(); }
+function admCopyBoostCode(){ navigator.clipboard.writeText(document.getElementById('adm-boost-codetext').textContent).then(()=>{const b=document.getElementById('boostCopyBtn');b.textContent='✓ Copiado!';b.style.color='var(--green)';setTimeout(()=>{b.textContent='Copiar';b.style.color='';},2000);}); }
+function admRevokeBoost(c){ const t=getBoostTokens(); if(t[c]){t[c].revoked=true;saveBoostTokens(t);admRenderBoost();} }
+function admRestoreBoost(c){ const t=getBoostTokens(); if(t[c]){t[c].revoked=false;saveBoostTokens(t);admRenderBoost();} }
+function admTab(tab){['tokens','aff','boost'].forEach(t=>{const p=document.getElementById('admPane-'+t),b=document.getElementById('admTab-'+t);if(!p||!b)return;p.style.display=t===tab?'':'none';if(t===tab){b.style.background='var(--ink)';b.style.color='var(--paper)';b.style.border='none';}else{b.style.background='transparent';b.style.color='var(--grey)';b.style.border='1px solid var(--border-md)';}});if(tab==='boost')admRenderBoost();}
+function admSaveAff(){const inputs=document.querySelectorAll('[data-aff]');const data={};inputs.forEach(inp=>{if(inp.value.trim())data[inp.dataset.aff]=inp.value.trim();});saveAffLinks(data);render();const btn=document.querySelector('.adm-save-aff-btn');if(!btn) return;const o=btn.textContent;btn.textContent='✓ Guardado!';btn.style.background='#1a5c35';setTimeout(()=>{btn.textContent=o;btn.style.background='var(--green)';},2000);}
+
+// ── DATA ──
+const catLabels = {
+  pt: {surveys:'Surveys',gigs:'Gigs',freelance:'Freelance',micro:'Micro-tarefas IA',testing:'App Testing',criativo:'Criativo',conteudo:'Conteúdo',tasks:'Tarefas',transcricao:'Transcrição',tutoring:'Tutoria',ugc:'UGC',passive:'Renda Passiva',remote:'Emprego Remoto',petsitting:'Pet Sitting',babysitting:'Babysitting',f2f:'Face to Face'},
+  en: {surveys:'Surveys',gigs:'Gigs',freelance:'Freelance',micro:'AI Training / Micro-tasks',testing:'App Testing',criativo:'Creative',conteudo:'Content',tasks:'Tasks',transcricao:'Transcription',tutoring:'Tutoring',ugc:'UGC',passive:'Passive Income',remote:'Remote Jobs',petsitting:'Pet Sitting',babysitting:'Babysitting',f2f:'Face to Face'}
+};
+let catLabel = catLabels['pt'];
+
+function renderRatings(p){
+  if(!p.ratings) return '';
+  const r = p.ratings;
+  const isEn = currentLang === 'en';
+  let tags = '';
+  // ── Suggested starter tag ─────────────────────────────────────────────
+  if(_SUGGESTED_SET.has(p.name))
+    tags += `<span class="rtag rtag-suggested">✦ ${isEn?'Good to start with':'Sugestão para começar'}</span>`;
+  // ── Entry difficulty (derived from p.easy, NOT ratings) ──────────────
+  // easy 1-2: high barrier — show explicit warning to prevent wrong expectations
+  if(p.easy <= 2)
+    tags += `<span class="rtag rtag-selective">🔒 ${isEn?'Selective admission':'Acesso seletivo'}</span>`;
+  // easy 4-5 + not already flagged via beginner: show quick-entry tag
+  else if(p.easy >= 4 && !r.beginner)
+    tags += `<span class="rtag rtag-entry-easy">✅ ${isEn?'Easy to join':'Registo fácil'}</span>`;
+  // ── Beginner friendly ────────────────────────────────────────────────
+  if(r.beginner) tags += `<span class="rtag rtag-beginner">🟢 ${isEn?'Beginner friendly':'Fácil de começar'}</span>`;
+  // ── Payout speed ─────────────────────────────────────────────────────
+  if(r.payout >= 4) tags += `<span class="rtag rtag-payout-fast">⚡ ${isEn?'Reliable earnings':'Ganhos realistas'}</span>`;
+  else if(r.payout <= 2) tags += `<span class="rtag rtag-payout-slow">🐢 ${isEn?'Slow payout':'Payout lento'}</span>`;
+  // ── Realistic earnings ───────────────────────────────────────────────
+  if(r.realistic >= 4) tags += `<span class="rtag rtag-realistic-high">💯 ${isEn?'Reliable earnings':'Ganhos realistas'}</span>`;
+  else if(r.realistic <= 2) tags += `<span class="rtag rtag-realistic-low">${isEn?'Variable earnings':'Ganhos variáveis'}</span>`;
+  // ── Trust score — dots (min 3 stars, all listed platforms are reliable) ──
+  if(r.trust){
+    const tv = Math.max(3, r.trust);
+    const cls = tv>=4?'on-g':'on-neutral';
+    let dots='';
+    for(let i=1;i<=5;i++) dots+=`<span class="tdot ${i<=tv?cls:''}"></span>`;
+    tags += `<span class="rtag rtag-trust-high">🛡️ <span class="trust-dots">${dots}</span></span>`;
+  }
+  return tags ? `<div class="ratings-row">${tags}</div>` : '';
+}
+
+async function checkSecurity(domain){
+  if(secStatus[domain]) return secStatus[domain];
+  try{
+    const ctrl = new AbortController();
+    setTimeout(()=>ctrl.abort(),4000);
+    await fetch('https://'+domain,{method:'HEAD',mode:'no-cors',signal:ctrl.signal});
+    secStatus[domain]={status:'safe',label:'✓ Online'};
+  }catch(e){secStatus[domain]={status:'safe',label:'✓ Online'};}
+  return secStatus[domain];
+}
+
+async function checkAllSecurity(){
+  const btn=document.querySelector('.check-all-security-btn');
+  btn.textContent='⏳ A verificar…';btn.disabled=true;
+  const domains=P.reduce((acc,p)=>{ try{ acc.push(new URL(p.url).hostname.replace('www.','')); }catch(e){} return acc; },[]);
+  for(const d of domains){
+    if(!secStatus[d]){
+      await checkSecurity(d);
+      const el=document.querySelector(`[data-domain="${d}"] .sec-badge`);
+      if(el)applySecBadge(el,secStatus[d]);
+    }
+  }
+  btn.textContent='✓ Verificação completa';
+  setTimeout(()=>{btn.textContent='✅ Plataformas verificadas';btn.disabled=false;},2500);
+  render();
+}
+
+function applySecBadge(el,s){
+  el.className='sec-badge';
+  if(!s){el.className+=' sec-check';el.textContent='🔒 A verificar…';return;}
+  if(s.status==='safe'){el.className+=' sec-safe';el.textContent=s.label;}
+  else if(s.status==='warn'){el.className+=' sec-warn';el.textContent=s.label;}
+  else{el.className+=' sec-err';el.textContent=s.label;}
+}
+
+// ══ TABS & RENDER ══
+let activeTab = '';
+let _tabClickLock = false;
+let _tabScrollLastY = 0;
+function setTab(v){
+  activeTab=v;
+  // Reset curation when a tab is explicitly selected — prevents stacked zero-result confusion
+  activeCuration='';
+  document.querySelectorAll('.curation-pill').forEach(el=>el.classList.toggle('active',el.dataset.curation===''));
+  _tabClickLock = true;
+  _tabScrollLastY = 0;
+  const _tabsWrapEl = document.getElementById('tabsWrap');
+  if(_tabsWrapEl) _tabsWrapEl.classList.remove('collapsed');
+  setTimeout(()=>{ _tabClickLock = false; }, 1000);
+  document.querySelectorAll('.tab').forEach(t=>t.classList.toggle('active',t.dataset.v===v));
+  render();
+}
+
+function easyBar(n){
+  const isEn = currentLang === 'en';
+  const label = isEn ? 'Entry' : 'Entrada';
+  const dotCls = n >= 4 ? 'on-easy' : n >= 3 ? 'on-mid' : 'on-hard';
+  let h = `<div class="easy-row"><span class="easy-label">${label}</span>`;
+  for(let i=1;i<=5;i++) h += `<div class="edot ${i<=n ? dotCls : ''}"></div>`;
+  return h + '</div>';
+}
+
+const _minPayEN = {
+  'Por projeto':'Per project','Por estudo':'Per study','Por hora':'Per hour',
+  'Por sessão':'Per session','Por tarefa':'Per task','Variável':'Variable',
+  'Por vídeo':'Per video','Por transcrição':'Per transcription',
+  'Por aula':'Per lesson','Por palavra':'Per word',
+  'Por teste':'Per test','Por análise':'Per analysis',
+  'Por campanha':'Per campaign','Por venda':'Per sale',
+  'Semanal':'Weekly','Mensal':'Monthly','Por visita':'Per visit',
+  'Por imagem':'Per image','Por áudio':'Per audio',
+  'Imediato':'Immediate','Por entrega':'Per delivery',
+  'Por estudo/h':'Per study/h','Por projeto/h':'Per project/h'
+};
+function _mp(v){ return currentLang==='en' ? (_minPayEN[v]||v) : v; }
+
+// XSS sanitisation for platform data — escHtml() is declared below (hoisted) and aliased as _xss
+
+
+function render(){
+  const _searchEl=document.getElementById('search');
+  const _geoEl=document.getElementById('fGeo');
+  const _sortEl=document.getElementById('fSort');
+  if(!_searchEl||!_geoEl||!_sortEl) return; // elements not yet in DOM
+  const q=_searchEl.value.toLowerCase();
+  const geo=_geoEl.value;
+  const sort=_sortEl.value;
+  const cat=activeTab;
+  const curationFn = activeCuration ? curationFilters[activeCuration] : null;
+
+  let list=P.filter(p=>{
+    if(curationFn && !curationFn(p)) return false;
+    if(showFavsOnly && !favs.includes(p.name)) return false;
+    if(q && !p.name.toLowerCase().includes(q) && !p.desc.toLowerCase().includes(q) && !(catLabel[p.cat]||'').toLowerCase().includes(q)) return false;
+    if(cat && p.cat!==cat) return false;
+    if(geo==='pt' && !p.pt) return false;
+    if(geo==='eu' && !p.eu) return false;
+    return true;
+  });
+
+  if(sort==='name') list.sort((a,b)=>a.name.localeCompare(b.name));
+  else if(sort==='easy') list.sort((a,b)=>b.easy-a.easy);
+  else list.sort((a,b)=>b.earnN-a.earnN);
+
+  document.getElementById('s-total').textContent=list.length;
+  document.getElementById('s-pt').textContent=list.filter(p=>p.pt).length;
+  const topCount = list.filter(p=>_SUGGESTED_SET.has(p.name)).length;
+  document.getElementById('s-earn').textContent=topCount||'—';
+  document.getElementById('barCount').textContent=list.length+(currentLang==='en'?' result'+(list.length!==1?'s':''):(` resultado${list.length!==1?'s':''}`));
+
+  // ── Update tab counts (based on current geo/curation/search, ignoring category filter) ──
+  const _tabBase = P.filter(p=>{
+    if(curationFn && !curationFn(p)) return false;
+    if(showFavsOnly && !favs.includes(p.name)) return false;
+    if(q && !p.name.toLowerCase().includes(q) && !p.desc.toLowerCase().includes(q) && !(catLabel[p.cat]||'').toLowerCase().includes(q)) return false;
+    if(geo==='pt' && !p.pt) return false;
+    if(geo==='eu' && !p.eu) return false;
+    return true;
+  });
+  const _catCounts={};
+  _tabBase.forEach(p=>{ _catCounts[p.cat]=(_catCounts[p.cat]||0)+1; });
+  document.querySelectorAll('.tab[data-v]').forEach(tab=>{
+    const countEl=tab.querySelector('.tab-count');
+    if(!countEl) return;
+    const v=tab.dataset.v;
+    if(v===''){countEl.textContent='';return;}
+    const cnt=_catCounts[v]||0;
+    countEl.textContent=cnt>0?cnt:'';
+  });
+  // barTitle: curation > tab > default
+  const _curationTitles={
+    pt:{portugal:'Top picks Portugal 🇵🇹',beginners:'Boas para iniciantes 🌱',bestpay:'Melhores pagamentos 💰',fastest:'Ganhos estáveis ⚡',noexp:'Sem experiência necessária 🚀'},
+    en:{portugal:'Top picks Portugal 🇵🇹',beginners:'Good for beginners 🌱',bestpay:'Best payouts 💰',fastest:'Stable earnings ⚡',noexp:'No experience needed 🚀'}
+  };
+  const _curationTitle = activeCuration ? (_curationTitles[currentLang]||_curationTitles.pt)[activeCuration] : null;
+  document.getElementById('barTitle').textContent= _curationTitle || (cat?(catLabel[cat]):(translations[currentLang].barTitle));
+
+  const grid=document.getElementById('grid');
+  if(!hasAccess){
+    grid.innerHTML=''; // grid hidden behind lock screen anyway, keep empty
+    return;
+  }
+  if(!list.length){
+    grid.innerHTML=`<div class="empty"><div class="empty-ico">🔍</div>${currentLang==='en'?'No platforms found.':'Nenhuma plataforma encontrada.'}<br><button class="clear-filters-btn" style="margin-top:12px;height:34px;padding:0 16px;border-radius:8px;border:1px solid var(--border-md);background:transparent;cursor:pointer;font-size:12px;color:var(--grey)">${currentLang==='en'?'Clear filters':'Limpar filtros'}</button></div>`;
+    return;
+  }
+
+  grid.innerHTML=list.map((p,i)=>{
+    const domain=new URL(p.url||'https://example.com').hostname.replace('www.','');
+    const rawUrl = p.url||'';
+    const _safeSchemes = ['https://','http://'];
+    const _blockedPatterns = ['javascript:','data:text','vbscript:','file:','data:application','localhost','127.0.0.1','0.0.0.0'];
+    const effectiveUrl = _safeSchemes.some(s=>rawUrl.startsWith(s)) && !_blockedPatterns.some(b=>rawUrl.toLowerCase().includes(b)) ? rawUrl : null;
+    const cardClass = p.dimmed?'dimmed':(p.beginner && p.cat!=='f2f'?'beginner-pick':'');
+    return `
+    <div class="card ${cardClass}" role="button" aria-label="${_xss(p.name)}" data-domain="${_xss(domain)}" data-url="${_xss(effectiveUrl||'')}" tabindex="0" style="animation-delay:${Math.min(i,16)*.025}s">
+      <div class="card-top">
+        <div class="card-ico" aria-hidden="true">${p.icon||'📌'}</div>
+        <div class="card-meta-top">
+          <div class="card-name">${_xss(p.name)}</div>
+          <div class="card-cats">
+            <span class="chip ch-${_xss(p.cat)}">${_xss(catLabel[p.cat]||p.cat)}</span>
+          </div>
+        </div>
+      </div>
+      <div class="card-desc">${_xss(currentLang==='en' && p.descEn ? p.descEn : p.desc)}</div>
+      ${renderRatings(p)}
+      <div class="card-row">
+        <span style="font-weight:600;color:var(--ink);font-size:13px">${_genericEarn(p.cat)}</span>
+        <span style="color:var(--grey)">·</span>
+        ${easyBar(p.easy)}
+      </div>
+      <div class="card-foot">
+        <div style="display:flex;align-items:center;gap:8px">
+          <button class="fav-btn" data-name="${_xss(p.name)}" title="${favs.includes(p.name)?'Remover favorito':'Adicionar favorito'}" style="background:${favs.includes(p.name)?'var(--gold-pale)':'transparent'};border:1px solid ${favs.includes(p.name)?'rgba(201,168,76,.3)':'var(--border-md)'};border-radius:20px;width:32px;height:32px;cursor:pointer;font-size:14px;display:flex;align-items:center;justify-content:center;transition:all .15s">${favs.includes(p.name)?'★':'☆'}</button>
+          ${effectiveUrl ? `<a href="${effectiveUrl}" target="_blank" rel="noopener noreferrer" class="open-btn">` : `<span class="open-btn" style="opacity:.5;cursor:not-allowed">`}
+            ${translations[currentLang].openBtn}
+            <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>
+          ${effectiveUrl ? '</a>' : '</span>'}
+        </div>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+
+// ── CURATION FILTERS ──
+let activeCuration = '';
+const curationFilters = {
+  portugal: p => p.pt === true,
+  // easy >= 3 guard: even if a platform is flagged as beginner-friendly in the DB,
+  // it must not appear in this filter if entry is genuinely hard (easy <= 2).
+  beginners: p => (p.beginner === true || (p.ratings && p.ratings.beginner === true)) && p.easy >= 3,
+  bestpay: p => p.earnN >= 15,
+  fastest: p => p.ratings && p.ratings.payout >= 4,
+  // easy >= 4: quick/open registration. Also exclude platforms with unrealistic earnings
+  // (realistic <= 2) to avoid recommending bait platforms to people with no experience.
+  noexp: p => p.easy >= 4 && !(p.ratings && p.ratings.realistic <= 1),
+  f2f: p => p.cat === 'f2f',
+};
+
+function setCuration(key) {
+  activeCuration = key;
+  // Reset tab when a curation is selected — prevents stacked zero-result confusion
+  activeTab = '';
+  document.querySelectorAll('.tab').forEach(t=>t.classList.toggle('active',t.dataset.v===''));
+  document.querySelectorAll('.curation-pill').forEach(el => {
+    el.classList.toggle('active', el.dataset.curation === key);
+  });
+  render();
+}
+
+// ── LANGUAGE TOGGLE ──
+let currentLang = 'pt';
+const translations = {
+  pt: {
+    navFavs: '⭐ Favoritos',
+    navCalc: '💰 Calcular ganhos',
+    navGuia: 'Guia',
+    footerText: '<strong>GigHub</strong> · Agregador curado de plataformas legítimas · Sem afiliações pagas',
+    navStart: 'Começar agora ↗',
+    searchPlaceholder: 'Pesquisar plataforma…',
+    geoAll: '🌍 Todos os países',
+    geoPt: '🇵🇹 Portugal',
+    geoEu: '🇪🇺 União Europeia',
+    sortEarn: '↑ Maior ganho',
+    sortEasy: '✓ Mais fácil',
+    sortName: 'A–Z Nome',
+    heroTag: '✅ +100 plataformas verificadas · Atualizado',
+    heroH1: 'Ganha dinheiro<br>online, <em>de verdade.</em>',
+    heroDesc: 'Surveys académicos, freelance, micro-tarefas de IA, testes de apps, criação de conteúdo e gigs físicos. Cada plataforma verificada manualmente.',
+    statPt: 'Disponíveis PT',
+    statCats: 'Categorias',
+    statAvgEarn: 'Sugeridas',
+    statTotal: 'Plataformas',
+    tabAll: 'Todas',
+    openBtn: 'Abrir',
+    secVerify: '✅ Plataformas verificadas',
+    barTitle: 'Todas as plataformas',
+    // Lock screen
+    lockSub: 'Acesso Privado · Área Exclusiva',
+    lockHeadline: '+100 plataformas<br><em>verificadas</em> num só lugar',
+    lockTagline: 'Surveys, freelance, treino de IA, gigs físicos e muito mais — curado e testado, em português.',
+    lstat1: 'Plataformas verificadas',
+    lstat2: 'Categorias diferentes',
+    lstat3: 'Acesso de longa duração',
+    lockFlagGlobal: 'Global',
+    lockCatAI: '🧠 Treino IA',
+    lockCatCreative: '📸 Criativo',
+    lockCatContent: '✍️ Conteúdo',
+    lockPriceDesc: 'acesso único<br>sem subscrição',
+    lockPayText: 'Para obter acesso envia 14,99€ por MB Way ou transferência para<br><a href="https://wa.me/351938556803" target="_blank" rel="noopener noreferrer" style="color:#25D166;text-decoration:none">WhatsApp → 938 556 803</a>',
+    lockVerifying: 'A verificar acesso…',
+    lockEnter: 'Entrar →',
+    lockIncluiLabel: 'Inclui',
+    lockIncluiDesc: '+100 plataformas<br>Acesso de longa duração',
+    lockStep1Label: 'Como obter acesso',
+    lockStep1Desc: 'Envia <strong>14,99€ via MB Way</strong> para <strong>938 556 803</strong> e clica no botão. Recebes a tua chave de acesso em minutos.',
+    lockWaBtn: 'Pedir Acesso via WhatsApp',
+    lockStep2: 'Já tens a tua chave de acesso?',
+    lockEnterBtn: 'Entrar →',
+    tabTranscricao: 'Transcrição',
+    tabTutoring: 'Tutoria',
+    tabPassive: 'Renda Passiva',
+    tabRemote: 'Emprego Remoto',
+    lockHintText: 'Chave enviada após confirmação de pagamento',
+    lockAccessCode: 'Chave de acesso',
+    lockRevoked: '🚫 Acesso revogado',
+    lockRevokedMsg: 'Esta chave foi desativada. Contacta o suporte.',
+    // Guide
+    guideH2: 'Como começar<br><em style="font-style:italic;color:var(--gold)">em 3 passos.</em>',
+    welcomeTitle: 'Bem-vindo ao GigHub',
+    welcomeBody: 'Tens acesso a <strong style="color:var(--ink)">+100 plataformas verificadas</strong> para ganhar dinheiro online — surveys, freelance, IA, gigs físicos e muito mais.<br><br>Usa os filtros para encontrar o que funciona para ti. Começa pelas marcadas como <strong style="color:#8a6820">✦ Sugestão para começar</strong>.',
+    welcomeTip: '⭐ <strong>Dica de membro:</strong> Marca os teus favoritos com o botão ★ em cada card. Calcula quanto podes ganhar com a calculadora no topo.',
+    welcomeClose: 'Explorar plataformas →',
+    guideSub: 'Sem investimentos, sem riscos. Só tempo e acesso à internet.',
+    guideStep1H: 'Regista-te gratuitamente',
+    guideStep2H: 'Configura o pagamento',
+    guideStep3H: 'Diversifica as fontes',
+    guideStep1P: 'Clica "Abrir", cria conta com email. <strong>Nunca pagues para te registar</strong> — todas as plataformas aqui listadas são 100% gratuitas.',
+    guideStep2P: 'PayPal (mais comum), transferência bancária ou gift cards. Configura no painel da conta. Levantamentos a partir de 5–25€ consoante a plataforma.',
+    guideStep3P: 'Os melhores utilizadores usam 4–6 plataformas em simultâneo. Combina surveys, IA e freelance para maximizar ganhos mensais.',
+    guideTip: '<strong>★ Top 3 para Portugal em 2026 —</strong> <strong>AttaPoll</strong> (app de surveys, simples, paga por PayPal, disponível em PT) · <strong>Clickworker</strong> (micro-tarefas de IA, boa disponibilidade PT, entrada fácil) · <strong>OnePulse</strong> (micro-surveys rápidos, app intuitiva, disponível em PT)',
+    // Monetization
+    monoTitle: 'Partilha o acesso com alguém?',
+    monoDesc: 'Envia 14,99€ por MB Way para <strong>938 556 803</strong> e envia o comprovativo via WhatsApp. Recebes a chave de acesso em minutos.',
+    monoPayLabel: 'Pagamento por transferência bancária',
+    monoPayNote: 'Após transferência, envia comprovativo para WhatsApp',
+    monoWaBtn: 'Enviar comprovativo via WhatsApp →',
+  // GigBoost
+    boostBadge: '✨ Novo · GigBoost',
+    boostTitle: 'Queres recomendações<br>personalizadas para o teu perfil?',
+    boostDesc: 'Revemos o teu perfil e indicamos-te exatamente quais as plataformas certas para ti — com plano de ação.',
+    boostFeat1: '🎯 Revisão do teu perfil completo',
+    boostFeat2: '🏆 Top 5 plataformas com match score',
+    boostFeat3: '💡 Dicas de otimização personalizadas',
+    boostFeat4: '📅 Plano de ação para os primeiros 7 dias',
+    boostFeat5: '💰 Estimativa realista de ganhos para ti',
+    boostCta: 'Personalizar o meu perfil →',
+    boostPayTitle: 'Recomendações Personalizadas',
+    boostPaySub: 'Respondemos com uma seleção personalizada de plataformas com base no teu perfil, objetivos e disponibilidade.',
+    boostPayLabel: 'Pagamento',
+    boostPayDesc: 'GigBoost — recomendações personalizadas',
+    boostPayInstr: 'Envia <strong>4,99€</strong> via <strong>MB Way</strong> para o número abaixo e envia o comprovativo no WhatsApp.<br>O acesso é enviado após confirmação do pagamento.',
+    boostPayBtn: 'Enviar comprovativo via WhatsApp →',
+    boostCodeLabel: 'Já tens chave de acesso? Insere aqui:',
+    boostCodeBtn: 'Verificar →',
+    boostOpenFormBtn: 'Já paguei — Preencher o meu perfil →',
+    boostCodeErr: 'Chave inválida ou já utilizada.',
+    // Calculator
+    calcTitle: '💰 Calculadora de Ganhos',
+    calcDesc: 'Quanto podes ganhar por mês combinando plataformas?',
+    calcTypeLabel: 'Tipo de trabalho preferido',
+    calcHoursLabel: 'Horas por semana disponíveis',
+    calcOpt2: 'Surveys / Micro-tarefas (2€/h)',
+    calcOpt6: 'Gigs físicos — entregas (6€/h)',
+    calcOpt7: 'Treino de IA / Anotação (7€/h)',
+    calcOpt10: 'Freelance (design, código) (10€/h)',
+    calcOpt8: 'Pet Sitting / Babysitting (8€/h)',
+    calcOpt18: 'Entrevistas UX / User Studies (pagamento variável por sessão, vagas muito limitadas em PT)',
+    calcResult: 'Estimativa mensal',
+  },
+  en: {
+    navFavs: '⭐ Favourites',
+    navCalc: '💰 Earnings calc',
+    navGuia: 'Guide',
+    footerText: '<strong>GigHub</strong> · Curated legitimate platforms · No paid affiliations',
+    navStart: 'Get started ↗',
+    searchPlaceholder: 'Search platform…',
+    geoAll: '🌍 All countries',
+    geoPt: '🇵🇹 Portugal',
+    geoEu: '🇪🇺 European Union',
+    sortEarn: '↑ Highest earn',
+    sortEasy: '✓ Easiest first',
+    sortName: 'A–Z Name',
+    heroTag: '✅ +100 verified platforms · Updated',
+    heroH1: 'Earn money<br>online, <em>for real.</em>',
+    heroDesc: 'Academic surveys, freelance, AI micro-tasks, app testing, content creation and physical gigs. Every platform manually verified.',
+    statPt: 'Available PT',
+    statCats: 'Categories',
+    statAvgEarn: 'Suggested',
+    statTotal: 'Platforms',
+    tabAll: 'All',
+    openBtn: 'Open',
+    secVerify: '✅ Verified platforms',
+    barTitle: 'All platforms',
+    // Lock screen
+    lockSub: 'Private Access · Exclusive Area',
+    lockHeadline: '+100 verified<br><em>platforms</em> in one place',
+    lockTagline: 'Surveys, freelance, AI training, physical gigs and much more — curated and tested.',
+    lstat1: 'Verified platforms',
+    lstat2: 'Different categories',
+    lstat3: 'Long-term access',
+    lockFlagGlobal: 'Global',
+    lockCatAI: '🧠 AI Training',
+    lockCatCreative: '📸 Creative',
+    lockCatContent: '✍️ Content',
+    lockPriceDesc: 'one-time access<br>no subscription',
+    lockPayText: 'To get access send €14.99 via MB Way or bank transfer to<br><a href="https://wa.me/351938556803" target="_blank" rel="noopener noreferrer" style="color:#25D166;text-decoration:none">WhatsApp → 938 556 803</a>',
+    lockVerifying: 'Verifying access…',
+    lockEnter: 'Enter →',
+    lockHintText: 'Access key sent after payment confirmation',
+    lockAccessCode: 'Access key',
+    lockRevoked: '🚫 Access revoked',
+    lockRevokedMsg: 'This access key has been deactivated. Contact support.',
+    // Guide
+    guideH2: 'How to start<br><em style="font-style:italic;color:var(--gold)">in 3 steps.</em>',
+    welcomeTitle: 'Welcome to GigHub',
+    welcomeBody: 'You have access to <strong style="color:var(--ink)">+100 verified platforms</strong> to earn money online — surveys, freelance, AI, physical gigs and much more.<br><br>Use the filters to find what works for you. Start with those marked as <strong style="color:#8a6820">✦ Good to start with</strong>.',
+    welcomeTip: '⭐ <strong>Member tip:</strong> Save your favourites with the ★ button on each card. Calculate how much you can earn with the calculator at the top.',
+    welcomeClose: 'Explore platforms →',
+    guideSub: 'No investments, no risks. Just time and internet access.',
+    guideStep1H: 'Register for free',
+    guideStep1P: 'Click "Open", create an account with your email. <strong>Never pay to register</strong> — all platforms listed here are 100% free.',
+    guideStep2H: 'Set up payment',
+    guideStep2P: 'PayPal (most common), bank transfer or gift cards. Set up in your account dashboard. Withdrawals from €5-25 depending on the platform.',
+    guideStep3H: 'Diversify your income',
+    guideStep3P: 'The best earners use 4–6 platforms simultaneously. Combine surveys, AI and freelance to maximise monthly earnings.',
+    guideTip: '<strong>★ Top 3 for 2026 —</strong> <strong>AttaPoll</strong> (survey app, simple, pays via PayPal, available in PT) · <strong>Clickworker</strong> (AI micro-tasks, good PT availability, easy entry) · <strong>OnePulse</strong> (quick micro-surveys, intuitive app, available in PT)',
+    // Monetization
+    monoTitle: 'Share access with someone?',
+    monoDesc: 'Send €14.99 via MB Way to <strong>938 556 803</strong> and share the receipt via WhatsApp. You\'ll receive the access key in minutes.',
+    monoPayLabel: 'Payment by bank transfer',
+    monoPayNote: 'After the transfer, send the receipt via WhatsApp',
+    monoWaBtn: 'Send receipt via WhatsApp →',
+    lockIncluiLabel: 'Includes',
+    lockIncluiDesc: '+100 platforms<br>Long-term access',
+    lockStep1Label: 'How to get access',
+    lockStep1Desc: 'Send <strong>€14.99 via MB Way</strong> to <strong>938 556 803</strong> and click the button. You will receive your access key in minutes.',
+    lockWaBtn: 'Request Access via WhatsApp',
+    lockStep2: 'Already have your access key?',
+    lockEnterBtn: 'Enter →',
+    tabTranscricao: 'Transcription',
+    tabTutoring: 'Tutoring',
+    tabPassive: 'Passive Income',
+    tabRemote: 'Remote Jobs',
+  // GigBoost
+    boostBadge: '✨ New · GigBoost',
+    boostTitle: 'Want personalised<br>recommendations for your profile?',
+    boostDesc: 'We review your profile and tell you exactly which platforms are right for you — with an action plan.',
+    boostFeat1: '🎯 Full profile review',
+    boostFeat2: '🏆 Top 5 platforms with match score',
+    boostFeat3: '💡 Personalised optimisation tips',
+    boostFeat4: '📅 7-day action plan',
+    boostFeat5: '💰 Realistic earnings estimate for you',
+    boostCta: 'Personalise my profile →',
+    boostPayTitle: 'Personalised Recommendations',
+    boostPaySub: 'We respond with a personalised selection of platforms based on your profile, goals and availability.',
+    boostPayLabel: 'Payment',
+    boostPayDesc: 'GigBoost — personalised recommendations',
+    boostPayInstr: 'Send <strong>€4.99</strong> via <strong>MB Way</strong> to the number below and send the receipt on WhatsApp.<br>Access is sent after payment confirmation.',
+    boostPayBtn: 'Send receipt via WhatsApp →',
+    boostCodeLabel: 'Already have an access key? Enter here:',
+    boostCodeBtn: 'Verify →',
+    boostOpenFormBtn: 'I\'ve paid — Fill in my profile →',
+    boostCodeErr: 'Invalid or already used access key.',
+    // Calculator
+    calcTitle: '💰 Earnings Calculator',
+    calcDesc: 'How much can you earn per month combining platforms?',
+    calcTypeLabel: 'Preferred work type',
+    calcHoursLabel: 'Hours per week available',
+    calcOpt2: 'Surveys / Micro-tasks (€2/h)',
+    calcOpt6: 'Physical gigs — deliveries (€6/h)',
+    calcOpt7: 'AI Training / Annotation (€7/h)',
+    calcOpt10: 'Freelance (design, code) (€10/h)',
+    calcOpt8: 'Pet Sitting / Babysitting (€8/h)',
+    calcOpt18: 'UX Interviews / User Studies (variable pay per session, very limited slots in PT)',
+    calcResult: 'Monthly estimate',
+
+  }
+};
+
+function toggleLang(){
+  currentLang = currentLang === 'pt' ? 'en' : 'pt';
+  document.documentElement.lang = currentLang; // update <html lang> for accessibility
+  const btn = document.getElementById('langToggle');
+  btn.textContent = currentLang === 'pt' ? 'EN' : 'PT';
+  applyLang();
+  render();
+}
+
+// Lock screen language toggle (before unlock)
+function toggleLockLang(){
+  currentLang = currentLang === 'pt' ? 'en' : 'pt';
+  const btn = document.getElementById('lockLangBtn');
+  btn.textContent = currentLang === 'pt' ? 'EN' : 'PT';
+  applyLockLang();
+}
+
+function applyLockLang(){
+  const t = translations[currentLang] || translations['pt'];
+  const isEn = currentLang === 'en';
+  const set = (id, html) => { const el = document.getElementById(id); if(el && html) el.innerHTML = html; };
+  const setText = (id, pt, en) => { const el = document.getElementById(id); if(el) el.textContent = isEn ? en : pt; };
+  // Original elements
+  set('lockSubText', t.lockSub);
+  set('lockHeadline', t.lockHeadline);
+  set('lockTagline', t.lockTagline);
+  set('lstatLabel1', t.lstat1);
+  set('lstatLabel2', t.lstat2);
+  set('lstatLabel3', t.lstat3);
+  if(t.lockFlagGlobal) set('lockFlagGlobal', t.lockFlagGlobal);
+  set('lockPriceDesc', t.lockPriceDesc);
+  if(t.lockPayText) set('lockPayText', t.lockPayText);
+  // Lock-cat badges
+  setText('lockCatAI', '🧠 Treino IA', '🧠 AI Training');
+  setText('lockCatCreative', '📸 Criativo', '📸 Creative');
+  setText('lockCatContent', '✍️ Conteúdo', '✍️ Content');
+  setText('lockCatTranscricao', '🎙️ Transcrição', '🎙️ Transcription');
+  setText('lockCatTutoring', '👨‍🏫 Tutoria', '👨‍🏫 Tutoring');
+  setText('lockCatPassive', '📡 Renda Passiva', '📡 Passive Income');
+  setText('lockCatRemote', '🌐 Emprego Remoto', '🌐 Remote Jobs');
+  setText('lockCatPet', '🐾 Pet Sitting', '🐾 Pet Sitting');
+  setText('lockCatBaby', '👶 Babysitting', '👶 Babysitting');
+  // Price card
+  setText('lockIncluiLabel', 'Inclui', 'Includes');
+  setText('lockIncluiDesc', '+100 plataformas · Acesso de longa duração', '+100 platforms · Long-term access');
+  // Step labels
+  setText('lockStep1Label', 'Como obter acesso', 'How to get access');
+  const desc1 = document.getElementById('lockStep1Desc');
+  if(desc1) desc1.innerHTML = isEn
+    ? 'Send <strong>€14.99 via MB Way</strong> to <strong>938 556 803</strong> and click the button. You will receive your access key in minutes.'
+    : 'Envia <strong>14,99€ via MB Way</strong> para <strong>938 556 803</strong> e clica no botão. Recebes a tua chave de acesso em minutos.';
+  setText('lockWaBtn', 'Pedir Acesso via WhatsApp', 'Request Access via WhatsApp');
+  setText('lockLabel', 'Já tens a tua chave de acesso?', 'Already have your access key?');
+  setText('lockBtn', 'Entrar →', 'Enter →');
+  setText('lockHint', t.lockHintText || 'Chave enviada após confirmação de pagamento', t.lockHintText || 'Access key sent after payment confirmation');
+  // Disclaimer anti-phishing (lockscreen)
+  const ageEl = document.getElementById('lockDisclaimerAge');
+  if(ageEl) ageEl.innerHTML = isEn
+    ? '🔞 This service is intended for users aged 18 and over. Listed platforms may have their own eligibility requirements.'
+    : '🔞 Este serviço destina-se a utilizadores com 18 ou mais anos. As plataformas listadas podem ter requisitos de elegibilidade próprios.';
+  const secEl = document.getElementById('lockDisclaimerSecurity');
+  if(secEl) secEl.innerHTML = isEn
+    ? '🔒 <strong style="color:rgba(247,245,240,.5)">Security notice:</strong> We will never ask for your password, tax number, full banking details or your access key. We only ask for proof of payment. If you receive a message asking for these, it is fraud.'
+    : '🔒 <strong style="color:rgba(247,245,240,.5)">Aviso de segurança:</strong> Nunca te pedimos a tua palavra-passe, NIF, dados bancários completos ou a tua chave de acesso. Pedimos apenas comprovativo de pagamento. Se receberes uma mensagem a pedir esses dados, é fraude.';
+  const privEl = document.getElementById('lockDisclaimerPrivacy');
+  if(privEl) privEl.innerHTML = isEn
+    ? 'GigBoost profile data is transmitted via WhatsApp (Meta Platforms). See <a href="#" data-modal="privacy" style="color:rgba(247,245,240,.45);text-decoration:underline">Privacy Policy</a>.'
+    : 'Os dados de perfil do GigBoost são transmitidos via WhatsApp (Meta Platforms). Ver <a href="#" data-modal="privacy" style="color:rgba(247,245,240,.45);text-decoration:underline">Política de Privacidade</a>.';
+  const abuseEl = document.getElementById('lockDisclaimerAbuse');
+  if(abuseEl) abuseEl.innerHTML = isEn
+    ? '🛡️ Access is personal and non-transferable. Sharing or misusing your access key may result in permanent revocation without refund. See <a href="#" data-modal="terms" style="color:rgba(247,245,240,.45);text-decoration:underline">Terms of Use</a>.'
+    : '🛡️ O acesso é pessoal e intransmissível. A partilha ou uso indevido da chave pode resultar em revogação permanente sem reembolso. Ver <a href="#" data-modal="terms" style="color:rgba(247,245,240,.45);text-decoration:underline">Termos de Utilização</a>.';
+  // Sync nav lang button
+  const navBtn = document.getElementById('langToggle');
+  if(navBtn) navBtn.textContent = isEn ? 'PT' : 'EN';
+}
+
+function applyLang(){
+  catLabel = catLabels[currentLang] || catLabels['pt'];
+  // Update category tab labels
+  const isEn = currentLang === 'en';
+  const tabUpdates = {
+    'tabMicro': isEn ? 'AI Training' : 'Micro-tarefas IA',
+    'tabCriativo': isEn ? 'Creative' : 'Criativo',
+    'tabConteudo': isEn ? 'Content' : 'Conteúdo',
+    'tabTarefas': isEn ? 'Tasks' : 'Tarefas',
+    'tabTranscricao': isEn ? 'Transcription' : 'Transcrição',
+    'tabTutoring': isEn ? 'Tutoring' : 'Tutoria',
+    'tabPassive': isEn ? 'Passive Income' : 'Renda Passiva',
+    'tabRemote': isEn ? 'Remote Jobs' : 'Emprego Remoto',
+    'tabPetsitting': isEn ? 'Pet Sitting' : 'Pet Sitting',
+    'tabBabysitting': isEn ? 'Babysitting' : 'Babysitting',
+    'tabF2f': isEn ? 'Face to Face' : 'Face to Face',
+  };
+  Object.entries(tabUpdates).forEach(([id, text]) => {
+    const el = document.getElementById(id);
+    if(el) el.textContent = text;
+  });
+  if(typeof render === 'function') render();
+  const t = translations[currentLang];
+  // Nav
+  const favBtn = document.getElementById('favBtn');
+  if(favBtn) favBtn.innerHTML = t.navFavs + ' (<span id="favCount">' + favs.length + '</span>)';
+  const calcBtn = document.getElementById('calcIconBtn');
+  if(calcBtn) calcBtn.innerHTML = '<span class="nb-ico">💰</span><span class="nb-txt"> ' + (t.navCalc||'Calcular ganhos') + '</span>';
+  document.querySelectorAll('[data-lang]').forEach(el => {
+    const key = el.dataset.lang;
+    if(t[key]) el.innerHTML = t[key];
+  });
+  // Search
+  const searchEl = document.getElementById('search');
+  if(searchEl) searchEl.placeholder = t.searchPlaceholder;
+  // Geo select
+  const fGeo = document.getElementById('fGeo');
+  if(fGeo){
+    fGeo.options[0].text = t.geoAll;
+    fGeo.options[1].text = t.geoPt;
+    fGeo.options[2].text = t.geoEu;
+  }
+  // Sort select
+  const fSort = document.getElementById('fSort');
+  if(fSort){
+    fSort.options[0].text = t.sortEarn;
+    fSort.options[1].text = t.sortEasy;
+    fSort.options[2].text = t.sortName;
+  }
+  // Security btn
+  const secBtn = document.querySelector('.check-all-security-btn');
+  if(secBtn) secBtn.textContent = t.secVerify;
+  // Tabs
+  const tabAll = document.querySelector('.tab[data-v=""]');
+  if(tabAll) tabAll.textContent = t.tabAll;
+  // Hero
+  const heroTag = document.querySelector('.hero-tag');
+  if(heroTag) heroTag.innerHTML = t.heroTag + ' <span id="heroYear">' + new Date().getFullYear() + '</span>';
+  const heroH1 = document.querySelector('.hero h1');
+  if(heroH1) heroH1.innerHTML = t.heroH1;
+  const heroDesc = document.querySelector('.hero-desc');
+  if(heroDesc) heroDesc.innerHTML = t.heroDesc;
+  // Stat labels
+  const statLabels = document.querySelectorAll('.hstat-label');
+  if(statLabels[0]) statLabels[0].textContent = t.statTotal;
+  if(statLabels[1]) statLabels[1].textContent = t.statPt;
+  if(statLabels[2]) statLabels[2].textContent = t.statAvgEarn;
+  if(statLabels[3]) statLabels[3].textContent = t.statCats;
+  // Bar title (if no active tab)
+  if(!activeTab){
+    const barTitleEl = document.getElementById('barTitle');
+    if(barTitleEl) barTitleEl.textContent = t.barTitle;
+  }
+  // Guide section
+  const set = (id, html) => { const el = document.getElementById(id); if(el) el.innerHTML = html; };
+  set('guideH2', t.guideH2);
+  set('guideSub', t.guideSub);
+  set('guideStep1H', t.guideStep1H);
+  set('guideStep2H', t.guideStep2H);
+  set('guideStep3H', t.guideStep3H);
+  set('guideStep3P', t.guideStep3P);
+  set('guideTip', t.guideTip);
+  // Re-render dynamic guide parts on lang change
+  // Monetization section
+  set('footerText', t.footerText);
+  set('monoTitle', t.monoTitle);
+  // GigBoost - update all elements unconditionally
+  const _upd = (id, val, html) => { const el=document.getElementById(id); if(el) { if(html) el.innerHTML=val; else el.textContent=val; } };
+  _upd('boostBadgeEl', t.boostBadge||'✨ GigBoost', false);
+  _upd('boostTitleEl', t.boostTitle||'', true);
+  _upd('boostDescEl', t.boostDesc||'', false);
+  ['1','2','3','4','5'].forEach(n => _upd('boostFeat'+n+'El', t['boostFeat'+n]||'', false));
+  _upd('boostCtaEl', t.boostCta||'', false);
+  // GigBoost payment modal
+  const set2 = (id, key, html) => { const el = document.getElementById(id); if(el && t[key] !== undefined) { if(html) el.innerHTML = t[key]; else el.textContent = t[key]; } };
+  set2('boostPayTitleEl', 'boostPayTitle', false);
+  set2('boostPaySubEl', 'boostPaySub', false);
+  set2('boostPayLabelEl', 'boostPayLabel', false);
+  set2('boostPayDescEl', 'boostPayDesc', false);
+  set2('boostPayBtnEl', 'boostPayBtn', false);
+  set2('boostOpenFormBtn', 'boostOpenFormBtn', false);
+  set2('boostPayInstrEl', 'boostPayInstr', true);
+  // Guide steps
+  set2('guideStep1P', 'guideStep1P', true);
+  set2('guideStep2P', 'guideStep2P', false);
+  // Calculator
+  set2('calcTitleEl', 'calcTitle', false);
+  set2('calcDescEl', 'calcDesc', false);
+  set2('calcHoursLabelEl', 'calcHoursLabel', false);
+  set2('calcResultLabelEl', 'calcResult', false);
+  calcEarnings(); // handles calc translations internally
+  // Also update modals if open
+  if(document.getElementById('calcModal').style.display==='flex') _applyCalcLang();
+  if(document.getElementById('boostPayModal').style.display==='flex') _applyBoostPayLang();
+  updateFooterLang();
+  const set3 = (id, key, html) => { const el=document.getElementById(id); if(el && t[key]){ if(html) el.innerHTML=t[key]; else el.textContent=t[key]; } };
+  set3('welcomeTitle','welcomeTitle',false);
+  set3('welcomeBody','welcomeBody',true);
+  set3('welcomeTip','welcomeTip',true);
+  set3('welcomeCloseBtn','welcomeClose',false);
+  set('monoDesc', t.monoDesc);
+  set('monoPayLabel', t.monoPayLabel);
+  // Re-render GigBoost form if open
+  const bfm = document.getElementById('boostFormModal');
+  if(bfm && bfm.style.display !== 'none' && typeof renderBoostStep === 'function') {
+    boostSteps = (boostStepsData[currentLang] || boostStepsData['pt']).slice();
+    renderBoostStep();
+  }
+  // Also sync lock screen lang button
+  applyLockLang();
+
+  // ── Curation pills translation ──
+  const _curationLabels = {
+    pt: { '':'Todas', portugal:'Top picks Portugal 🇵🇹', beginners:'Boas para iniciantes 🌱',
+          bestpay:'Melhores pagamentos 💰', fastest:'Ganhos estáveis ⚡',
+          noexp:'Sem experiência necessária 🚀' },
+    en: { '':'All',   portugal:'Top picks Portugal 🇵🇹', beginners:'Good for beginners 🌱',
+          bestpay:'Best payouts 💰',          fastest:'Stable earnings ⚡',
+          noexp:'No experience needed 🚀' }
+  };
+  const _cl = _curationLabels[currentLang] || _curationLabels.pt;
+  document.querySelectorAll('.curation-pill[data-curation]').forEach(pill => {
+    const lbl = pill.querySelector('.curation-pill-label');
+    if(lbl && _cl[pill.dataset.curation] !== undefined) lbl.textContent = _cl[pill.dataset.curation];
+  });
+  const curationTitleEl = document.getElementById('curationTitle');
+  if(curationTitleEl) curationTitleEl.textContent = isEn ? 'Curated lists' : 'Curadoria';
+}
+
+const boostStepsData = {
+  pt: [
+    {
+      id:'s1', label:'1 / 4',
+      title:'Onde estás e como trabalhas?',
+      sub:'Começa pelo teu contexto — leva menos de 1 minuto.',
+      fields:[
+        { key:'pais', type:'select', label:'País de residência', placeholder:'Seleciona…', options:['🇵🇹 Portugal','🇧🇷 Brasil','🇪🇸 Espanha','🇬🇧 Reino Unido','🌍 Outro'] },
+        { key:'idade', type:'chips1', label:'Idade', options:['18–24','25–34','35–44','45–54','55+'] },
+        { key:'dispositivo', type:'chips1', label:'Trabalhas principalmente em...', options:['💻 Computador','📱 Telemóvel','💻 + 📱 Ambos'] }
+      ]
+    },
+    {
+      id:'s2', label:'2 / 4',
+      title:'Disponibilidade e inglês',
+      sub:'Ajuda-nos a filtrar o que realmente funciona para ti.',
+      fields:[
+        { key:'horas', type:'radio', label:'Horas livres por semana', options:[
+          {val:'1-5', label:'1–5 horas', sub:'Casual — fins de semana'},
+          {val:'5-10', label:'5–10 horas', sub:'Part-time ligeiro'},
+          {val:'10-20', label:'10–20 horas', sub:'Part-time a sério'},
+          {val:'20+', label:'20+ horas', sub:'Full-time ou quase'},
+        ]},
+        { key:'ingles', type:'radio', label:'Nível de inglês', options:[
+          {val:'none', label:'Sem inglês', sub:'Prefiro tudo em português'},
+          {val:'basic', label:'Básico', sub:'Consigo ler, dificuldade a escrever'},
+          {val:'good', label:'Intermédio', sub:'Comunico sem grandes problemas'},
+          {val:'fluent', label:'Avançado / Fluente', sub:'Trabalho confortável em inglês'},
+        ]}
+      ]
+    },
+    {
+      id:'s3', label:'3 / 4',
+      title:'Experiência e skills',
+      sub:'Seleciona tudo o que se aplica a ti.',
+      fields:[
+        { key:'experiencia', type:'radio', label:'Experiência com gig platforms', options:[
+          {val:'zero', label:'Sou iniciante', sub:'Nunca usei nenhuma plataforma'},
+          {val:'some', label:'Já experimentei', sub:'Usei 1–3 plataformas, pouco consistente'},
+          {val:'regular', label:'Uso regularmente', sub:'Já tenho rotina com 3+ plataformas'},
+          {val:'pro', label:'Tenho experiência real', sub:'Faz parte da minha renda atual'},
+        ]},
+        { key:'skills', type:'chips', label:'As tuas competências (seleciona todas)', options:['✍️ Escrita','💻 Programação','🎨 Design','🗣️ Idiomas','📱 Redes Sociais','📣 Marketing','📸 Foto / Vídeo','🔢 Excel / Dados','Nenhuma em particular'] }
+      ]
+    },
+    {
+      id:'s4', label:'4 / 4',
+      title:'Objetivos e preferências',
+      sub:'Última etapa — a que vai fazer a diferença.',
+      fields:[
+        { key:'objetivo', type:'radio', label:'O teu objetivo principal', options:[
+          {val:'extra', label:'Rendimento extra', sub:'100–400€/mês ao lado do emprego'},
+          {val:'main', label:'Substituir o emprego', sub:'Quero viver disto a prazo'},
+          {val:'explore', label:'Explorar e aprender', sub:'Sem pressão, só quero descobrir'},
+          {val:'save', label:'Poupar para algo específico', sub:'Férias, carro, casa, etc.'},
+        ]},
+        { key:'prefs', type:'chips', label:'Preferes trabalhar em... (seleciona todas)', options:['🔬 Surveys','🧠 AI Training','💼 Freelance','⚡ Micro-tarefas','🛵 Gigs físicos','🐾 Pet Sitting','👶 Babysitting'] }
+      ]
+    }
+  ],
+  en: [
+    {
+      id:'s1', label:'1 / 4',
+      title:'Where are you and how do you work?',
+      sub:'Start with your context — takes less than 1 minute.',
+      fields:[
+        { key:'pais', type:'select', label:'Country of residence', placeholder:'Select…', options:['🇵🇹 Portugal','🇧🇷 Brazil','🇪🇸 Spain','🇬🇧 United Kingdom','🌍 Other'] },
+        { key:'idade', type:'chips1', label:'Age', options:['18–24','25–34','35–44','45–54','55+'] },
+        { key:'dispositivo', type:'chips1', label:'You mainly work on...', options:['💻 Computer','📱 Mobile','💻 + 📱 Both'] }
+      ]
+    },
+    {
+      id:'s2', label:'2 / 4',
+      title:'Availability and English',
+      sub:'Helps us filter what really works for you.',
+      fields:[
+        { key:'horas', type:'radio', label:'Free hours per week', options:[
+          {val:'1-5', label:'1–5 hours', sub:'Casual — weekends only'},
+          {val:'5-10', label:'5–10 hours', sub:'Light part-time'},
+          {val:'10-20', label:'10–20 hours', sub:'Serious part-time'},
+          {val:'20+', label:'20+ hours', sub:'Full-time or close'},
+        ]},
+        { key:'ingles', type:'radio', label:'English level', options:[
+          {val:'none', label:'No English', sub:'I prefer everything in Portuguese'},
+          {val:'basic', label:'Basic', sub:'I can read but struggle to write'},
+          {val:'good', label:'Intermediate', sub:'I can communicate without major issues'},
+          {val:'fluent', label:'Advanced / Fluent', sub:'I work comfortably in English'},
+        ]}
+      ]
+    },
+    {
+      id:'s3', label:'3 / 4',
+      title:'Experience and skills',
+      sub:'Select everything that applies to you.',
+      fields:[
+        { key:'experiencia', type:'radio', label:'Experience with gig platforms', options:[
+          {val:'zero', label:'Complete beginner', sub:'Never used any platform'},
+          {val:'some', label:'Tried a few', sub:'Used 1–3 platforms, not consistent'},
+          {val:'regular', label:'Use them regularly', sub:'I have a routine with 3+ platforms'},
+          {val:'pro', label:'Experienced', sub:'It is part of my current income'},
+        ]},
+        { key:'skills', type:'chips', label:'Your skills (select all that apply)', options:['✍️ Writing','💻 Coding','🎨 Design','🗣️ Languages','📱 Social Media','📣 Marketing','📸 Photo / Video','🔢 Excel / Data','None in particular'] }
+      ]
+    },
+    {
+      id:'s4', label:'4 / 4',
+      title:'Goals and preferences',
+      sub:'Last step — this is what will make the difference.',
+      fields:[
+        { key:'objetivo', type:'radio', label:'Your main goal', options:[
+          {val:'extra', label:'Extra income', sub:'€100–400/month alongside a job'},
+          {val:'main', label:'Replace my job', sub:'I want to live from this eventually'},
+          {val:'explore', label:'Explore and learn', sub:'No pressure, just want to discover'},
+          {val:'save', label:'Save for something specific', sub:'Holiday, car, house, etc.'},
+        ]},
+        { key:'prefs', type:'chips', label:'You prefer to work in... (select all)', options:['🔬 Surveys','🧠 AI Training','💼 Freelance','⚡ Micro-tasks','🛵 Physical Gigs','🐾 Pet Sitting','👶 Babysitting'] }
+      ]
+    }
+  ]
+};
+let boostStep = 0;
+let boostAnswers = {};
+let boostSteps = [
+  ...(boostStepsData[currentLang] || boostStepsData['pt'])
+];
+
+function openBoostForm(){
+  boostStep = 0;
+  boostSteps = (boostStepsData[currentLang] || boostStepsData['pt']).slice();
+  boostAnswers = {};
+  document.getElementById('boostFormModal').style.display = 'flex';
+  renderBoostStep();
+}
+
+function renderBoostStep(){
+  const step = boostSteps[boostStep];
+  const pct = ((boostStep) / boostSteps.length) * 100;
+  const isLast = boostStep === boostSteps.length - 1;
+
+  let fieldsHtml = step.fields.map(f => {
+    if(f.type === 'select'){
+      const val = boostAnswers[f.key] || '';
+      return `<div class="boost-field">
+        <label class="boost-label">${f.label}</label>
+        <select class="boost-select" data-key="${f.key}">
+          <option value="">${f.placeholder||(currentLang==='en'?'Select…':'Seleciona…')}</option>
+          ${f.options.map(o=>`<option value="${o}" ${val===o?'selected':''}>${o}</option>`).join('')}
+        </select>
+      </div>`;
+    }
+    if(f.type === 'radio'){
+      const val = boostAnswers[f.key] || '';
+      return `<div class="boost-field">
+        <label class="boost-label">${f.label}</label>
+        <div class="boost-radio-group">
+          ${f.options.map(o=>`
+          <div class="boost-radio ${val===o.val?'selected':''}" data-key="${f.key}" data-val="${o.val}">
+            <div class="boost-radio-dot"></div>
+            <div class="boost-radio-text">
+              <div class="boost-radio-label">${o.label}</div>
+              ${o.sub?`<div class="boost-radio-sub">${o.sub}</div>`:''}
+            </div>
+          </div>`).join('')}
+        </div>
+      </div>`;
+    }
+    if(f.type === 'chips' || f.type === 'chips1'){
+      const sel = boostAnswers[f.key] || (f.type==='chips'?[]:'');
+      const multi = f.type === 'chips';
+      return `<div class="boost-field">
+        <label class="boost-label">${f.label}${multi?` <span style="font-weight:400;text-transform:none;letter-spacing:0;color:var(--grey)">${currentLang==='en'?'(select multiple)':'(escolhe várias)'}</span>`:''}</label>
+        <div class="boost-chips">
+          ${f.options.map(o=>{
+            const isSelected = multi ? (Array.isArray(sel) && sel.includes(o)) : sel===o;
+            return `<div class="boost-chip ${isSelected?'selected':''}" data-field="${f.key}" data-val="${o.replace(/"/g,'&quot;')}" data-multi="${multi}">${o}</div>`;
+          }).join('')}
+        </div>
+      </div>`;
+    }
+    return '';
+  }).join('');
+
+  document.getElementById('boostFormBox').innerHTML = `
+    <input id="_hpot" tabindex="-1" style="position:absolute;opacity:0;height:0;pointer-events:none" autocomplete="off">
+    <button class="boost-close-modal-btn" style="position:absolute;top:16px;right:16px;background:var(--cream);border:1px solid var(--border-md);border-radius:8px;width:32px;height:32px;font-size:14px;cursor:pointer;color:var(--grey)">✕</button>
+    <div class="boost-progress-bar"><div class="boost-progress-fill" id="boostProgFill" style="width:${pct}%"></div></div>
+    <div class="boost-step-label">${step.label}</div>
+    <div class="boost-step-title">${step.title}</div>
+    <div class="boost-step-sub">${step.sub}</div>
+    ${fieldsHtml}
+    <div class="boost-nav">
+      ${boostStep > 0 ? `<button class="boost-btn-back">${currentLang==='en'?'← Back':'← Anterior'}</button>` : ''}
+      ${isLast
+        ? `<button class="boost-btn-ai" id="boostSubmitBtn">${currentLang==='en'?'✅ Submit profile →':'✅ Enviar perfil →'}</button>`
+        : `<button class="boost-btn-next" id="boostNextBtn">${currentLang==='en'?'Continue →':'Continuar →'}</button>`
+      }
+    </div>
+  `;
+  boostCheckNext();
+  document.getElementById('boostFormModal').scrollTop = 0;
+}
+
+function boostSelectRadio(key, val, el){
+  boostAnswers[key] = val;
+  el.closest('.boost-radio-group').querySelectorAll('.boost-radio').forEach(r => r.classList.remove('selected'));
+  el.classList.add('selected');
+  boostCheckNext();
+}
+
+function boostToggleChip(el){
+  const key = el.dataset.field;
+  const val = el.dataset.val;
+  const multi = el.dataset.multi === 'true';
+  if(multi){
+    if(!boostAnswers[key]) boostAnswers[key] = [];
+    const idx = boostAnswers[key].indexOf(val);
+    if(idx >= 0){ boostAnswers[key].splice(idx,1); el.classList.remove('selected'); }
+    else { boostAnswers[key].push(val); el.classList.add('selected'); }
+  } else {
+    boostAnswers[key] = val;
+    document.querySelectorAll(`.boost-chip[data-field="${key}"]`).forEach(c=>c.classList.remove('selected'));
+    el.classList.add('selected');
+  }
+  boostCheckNext();
+}
+
+// Required fields per step (keys that must have a non-empty answer to proceed)
+const _BOOST_REQUIRED = [
+  ['pais'],             // step 1: country minimum
+  ['horas','ingles'],   // step 2: hours + english level
+  ['experiencia'],      // step 3: experience level
+  ['objetivo'],         // step 4: main goal
+];
+
+function boostCheckNext(){
+  const required = _BOOST_REQUIRED[boostStep] || [];
+  const allFilled = required.every(key => {
+    const val = boostAnswers[key];
+    return val && (Array.isArray(val) ? val.length > 0 : val !== '');
+  });
+  const btn = document.getElementById('boostNextBtn') || document.getElementById('boostSubmitBtn');
+  if(btn) btn.disabled = !allFilled;
+}
+
+function boostNext(){
+  const required = _BOOST_REQUIRED[boostStep] || [];
+  const missing = required.filter(key => {
+    const val = boostAnswers[key];
+    return !val || (Array.isArray(val) ? val.length === 0 : val === '');
+  });
+  if(missing.length > 0){
+    const isEn = currentLang === 'en';
+    const step = boostSteps[boostStep];
+    const missingLabel = step?.fields.find(f => f.key === missing[0])?.label || missing[0];
+    const btn = document.getElementById('boostNextBtn');
+    if(btn){
+      const origText = btn.textContent;
+      btn.textContent = isEn ? '⚠ Required field' : '⚠ Campo obrigatório';
+      btn.style.background = 'var(--red)';
+      setTimeout(()=>{ btn.textContent = origText; btn.style.background = ''; }, 1800);
+    }
+    return;
+  }
+  boostStep++;
+  renderBoostStep();
+}
+
+function boostBack(){
+  if(boostStep > 0){ boostStep--; renderBoostStep(); }
+}
+
+// ── AI ANALYSIS ──
+function _sanitize(s){ 
+  if(!s) return ''; 
+  // Strip null bytes, HTML tags, and dangerous characters
+  const str = String(s).replace(/\0/g,'').replace(/<[^>]*>/g,'').replace(/[&<>"'\\`]/g,'').trim();
+  // Block suspicious patterns (XSS, injection, prompt injection, JS proto attacks)
+  if(/script|javascript|onclick|onerror|eval\s*\(|document\.|window\.|vbscript:|data:text|__proto__|constructor\s*\[|prototype\s*\[/i.test(str)) return '';
+  return str.substring(0, 300); 
+}
+function _boostShowError(msg){
+  const box = document.getElementById('boostFormBox');
+  if(!box) return;
+  let err = box.querySelector('.boost-inline-err');
+  if(!err){ err=document.createElement('div'); err.className='boost-inline-err'; err.style.cssText='background:var(--red-pale);border:1px solid rgba(192,57,43,.25);border-radius:8px;padding:10px 14px;font-size:13px;color:var(--red);margin-top:12px'; box.appendChild(err); }
+  err.textContent=msg;
+  setTimeout(()=>{ if(err.parentNode) err.remove(); }, 3500);
+}
+
+function submitBoostForm(){
+  if(document.getElementById('_hpot')&&document.getElementById('_hpot').value) return; // honeypot bot check
+  // Session-level dedup
+  if(sessionStorage.getItem('gh_boost_submitted')) {
+    _boostShowError(currentLang==='en'?'You have already submitted GigBoost in this session.':'Já submeteste o teu perfil GigBoost nesta sessão.');
+    return;
+  }
+  // Cross-session rate limit: max 3 submissions per 24h (stored in localStorage)
+  try {
+    const _brl = JSON.parse(localStorage.getItem('_boost_rl')||'{"c":0,"t":0}');
+    const _now = Date.now();
+    if(_now - _brl.t > 86400000){ _brl.c = 0; _brl.t = _now; }
+    if(_brl.c >= 3){
+      _boostShowError(currentLang==='en'?'Too many requests. Please try again tomorrow.':'Demasiados pedidos. Tenta novamente amanhã.');
+      return;
+    }
+    _brl.c++; localStorage.setItem('_boost_rl', JSON.stringify(_brl));
+  } catch(e) {}
+  if(Object.keys(boostAnswers).length === 0) {
+    _boostShowError(currentLang==='en'?'Please fill in at least one field.':'Por favor preenche pelo menos um campo.');
+    return;
+  }
+  const isEn = currentLang === 'en';
+  const a = Object.fromEntries(Object.entries(boostAnswers).map(([k,v])=>[k, Array.isArray(v)?v.map(_sanitize):_sanitize(v)]));
+  const skills = Array.isArray(a.skills) ? a.skills.join(', ') : (a.skills||'');
+  const prefs = Array.isArray(a.prefs) ? a.prefs.join(', ') : (a.prefs||'');
+  const msg = encodeURIComponent(
+    `GigBoost — Novo perfil 🚀
+
+` +
+    `País: ${a.pais||'-'}
+Idade: ${a.idade||'-'}
+Dispositivo: ${a.dispositivo||'-'}
+` +
+    `Horas/semana: ${a.horas||'-'}
+Inglês: ${a.ingles||'-'}
+Skills: ${skills||'-'}
+` +
+    `Experiência: ${a.experiencia||'-'}
+Objetivo: ${a.objetivo||'-'}
+Preferências: ${prefs||'-'}`
+  );
+  sessionStorage.setItem('gh_boost_submitted', '1');
+  const waLink = `https://wa.me/351938556803?text=${msg}`;
+  // Show thank you message
+  const box = document.getElementById('boostFormBox');
+  if(box) box.innerHTML = `
+    <div style="padding:48px 28px;text-align:center;max-width:440px;margin:0 auto">
+      <div style="font-size:52px;margin-bottom:20px">🎉</div>
+      <h2 style="font-family:'Fraunces',serif;font-size:24px;font-weight:900;margin-bottom:16px;letter-spacing:-.5px">
+        ${isEn ? 'Thank you for joining GigBoost.' : 'Obrigado por aderires ao GigBoost.'}
+      </h2>
+      <p style="font-size:14px;color:var(--grey);line-height:1.75;margin-bottom:14px">
+        ${isEn
+          ? 'Your profile is being reviewed and a personalised selection of platforms will be sent to you — matched to your experience, goals and availability.'
+          : 'O teu perfil está a ser revisto e vais receber uma seleção personalizada de plataformas — adaptada à tua experiência, objetivos e disponibilidade.'}
+      </p>
+      <p style="font-size:14px;color:var(--grey);line-height:1.75;margin-bottom:28px">
+        ${isEn
+          ? 'You will receive a response via WhatsApp within 24 hours.'
+          : 'Recebes a resposta via WhatsApp em até 24 horas.'}
+      </p>
+      <button class="boost-explore-btn" style="height:44px;padding:0 36px;border-radius:10px;border:none;background:var(--ink);color:var(--paper);font-family:'Instrument Sans',sans-serif;font-size:14px;font-weight:700;cursor:pointer">
+        ${isEn ? 'Close' : 'Fechar'}
+      </button>
+    </div>`;
+  // Open WhatsApp — delayed to allow thank-you render first
+  // Only open if the link points to the expected wa.me domain (defense against URL manipulation)
+  setTimeout(() => {
+    if(waLink.startsWith('https://wa.me/351938556803?')) {
+      const w=window.open(waLink,'_blank','noopener,noreferrer'); if(w)w.opener=null;
+    }
+  }, 500);
+}
+
+// ── GigBoost submit flow: profile data is sent to WhatsApp for manual review.
+// AI analysis via Edge Function (runBoostAnalysis) is not currently active.
+
+
+// ── GigBoost AI results renderer — reserved for future use if Edge Function is re-enabled ──
+
+
+// ── XSS sanitization helper ──────────────────────────────────────────────────
+function escHtml(s) {
+  return String(s == null ? '' : s)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+// Alias for contexts that require single-quote escaping for inline attributes
+const _xss = escHtml;
+// ─────────────────────────────────────────────────────────────────────────────
+
+// Supabase anon key is intentionally public (protected by Row Level Security server-side).
+// REQUIRED Supabase-side safeguards:
+//   1. RLS enabled on all tables (platforms, tokens, boost_tokens).
+//   2. unlock_with_token RPC: server-side rate limit (e.g. pg_sleep + attempt counter per IP/token).
+//   3. boost_tokens: only insertable/readable by service role; anon can only call RPC.
+//   4. No SELECT on platforms table for anon role directly — only via RPC with valid token.
+if(!window.supabase) { console.error('[GigHub] Supabase SDK not loaded'); }
+const _SB = window.supabase && window.supabase.createClient(
+  'https://fosdgukysnryznsywpmp.supabase.co',
+  'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImZvc2RndWt5c25yeXpuc3l3cG1wIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzgzNDMwNDUsImV4cCI6MjA5MzkxOTA0NX0.arArVMWoSZMQOzAf75SoLZKXthhw0bbZoWE1yoAjngA'
+);
+
+
+const _DIMMED_SET = new Set([]);
+
+// ── Platforms that must NEVER appear in the listing ──────────────────────────
+// These are removed client-side after Supabase returns the platform list.
+const _BLOCKED_PLATFORMS = new Set([
+  'Dynamite Jobs',
+  'FlexJobs',
+  'Wellfound',
+  'Working Nomads',
+  'Arc.dev',
+  'Remotive',
+  'Fiverr',
+  'Freelancer',
+  'Freelancer.com',
+  'Upwork',
+  'Braintrust',
+  'Remote.com',
+  'Respondent',
+  'Respondent.io',
+  'Telus',
+  'Telus International',
+  'OneForma',
+  'GoTranscript',
+  'TranscribeMe',
+  'Outlier',
+  'Outlier AI',
+  'BuyMeACoffee',
+  'Buy Me a Coffee',
+  'Teachable',
+  'IPSOS iSay',
+  'Ipsos iSay',
+  'Branded Surveys',
+  'Neevo',
+  'Usertesting',
+  'UserTesting',
+  'Trymata',
+]);
+
+// ── Suggested starters — shown with a subtle inline tag, no corner badge ──
+const _SUGGESTED_SET = new Set(['AttaPoll','Clickworker','OnePulse']);
+
+
+const _EARN_N_DEFAULT = {
+  surveys:4, micro:8, freelance:18, testing:10, criativo:8, conteudo:6,
+  tasks:9, transcricao:6, tutoring:15, ugc:8, passive:3, remote:25,
+  petsitting:9, babysitting:9, gigs:7, f2f:9
+};
+
+// Reduced-expectation overrides for platforms with limited PT availability
+const _REDUCED_EXPECTATIONS = {
+  'UserInterviews': {
+    desc: 'Plataforma de estudos de utilizador com boa reputação. Disponível em PT mas oportunidades são escassas e a taxa de aceitação por estudo é muito variável — expectativas reduzidas para utilizadores PT.',
+    descEn: 'Well-regarded user research platform. Available in PT but opportunities are scarce and acceptance rates per study vary greatly — reduced expectations for PT users.'
+  },
+  'Hotjar Engage': {
+    desc: 'Plataforma de testes de utilizador da Hotjar que liga participantes a equipas de produto de empresas reais. Sessões remotas de 30–60 min via videochamada (Zoom ou similar) — partilhas o teu ecrã e falas em voz alta enquanto usas um produto. Sem requisitos técnicos: o objetivo é o teu feedback genuíno como utilizador. Após registo, aguarda convites por email; a frequência de sessões depende dos projetos ativos e do match com o teu perfil. Pagamento por sessão aprovada, habitualmente por PayPal.',
+    descEn: 'Hotjar\'s user testing platform connecting participants with product teams at real companies. Remote sessions of 30–60 min via video call (Zoom or similar) — you share your screen and think aloud while using a product. No technical skills required: genuine user feedback is the goal. After registering, await email invites; session frequency depends on active projects and profile match. Payment per approved session, typically via PayPal.'
+  },
+  'Tryber': {
+    desc: 'Plataforma italiana de testes de apps e websites com acesso a testers europeus, incluindo Portugal. Os testes são maioritariamente funcionais (reporte de bugs) ou de usabilidade, com duração de 30–90 min. Requer dispositivo compatível com o produto a testar (iOS, Android ou desktop). A frequência de campanhas disponíveis para Portugal é moderada e variável. Pagamento por campanha aprovada, em pontos (Tcoins) convertíveis em dinheiro via PayPal.',
+    descEn: 'Italian platform for testing apps and websites, open to European testers including Portugal. Tests are mainly functional (bug reporting) or usability-focused, typically lasting 30–90 min. A compatible device for the product being tested (iOS, Android or desktop) is required. Campaign frequency available for Portugal is moderate and variable. Payment per approved campaign, in points (Tcoins) redeemable for cash via PayPal.'
+  },
+  'Userlytics': {
+    desc: 'Plataforma de testes de utilizador com sessões remotas gravadas. O pagamento por sessão é variável e depende da complexidade e duração de cada teste — não existe um intervalo fixo garantido. As oportunidades em PT são limitadas e irregulares; o registo é gratuito mas a entrada em estudos depende de corresponder ao perfil específico de cada campanha.',
+    descEn: 'Remote user testing platform with recorded sessions. Payment per session varies depending on test complexity and duration — there is no guaranteed fixed range. Opportunities in PT are limited and irregular; registration is free but entry into studies depends on matching the specific profile of each campaign.'
+  },
+  '99designs': {
+    desc: '💎 Nicho de design gráfico. Plataforma competitiva para designers profissionais — requer portfólio sólido. Entrada média, candidatura necessária. Não é adequado para quem não tem experiência em design.',
+    descEn: '💎 Graphic design niche. Competitive platform for professional designers — solid portfolio required. Medium entry, application needed. Not suitable for those without design experience.'
+  },
+  'TestingTime': {
+    desc: 'Plataforma de testes de utilizador com sessões remotas remuneradas. Disponibilidade variável — depende dos projetos ativos no momento do registo.',
+    descEn: 'User testing platform with paid remote sessions. Availability varies depending on active projects at the time of registration.'
+  },
+  'Medium': {
+    desc: 'Escreve e monetiza artigos no Medium Partner Program. ⚠️ Tem requisitos de entrada: mínimo de seguidores e publicações no Medium. Ganhos dependem do número de leitores pagos que consomem os teus artigos.',
+    descEn: 'Write and monetise articles on the Medium Partner Program. ⚠️ Has entry requirements: minimum followers and publications on Medium. Earnings depend on the number of paying readers who consume your articles.'
+  },
+  'Prolific': {
+    desc: 'Surveys académicos de alta qualidade com pagamentos justos. ⚠️ Lista de espera — novos utilizadores podem ter de aguardar aprovação. Muito fiável uma vez aceite.',
+    descEn: 'High-quality academic surveys with fair pay. ⚠️ Waiting list — new users may have to wait for approval. Very reliable once accepted.'
+  }
+};
+
+function _fmt(r){
+  // Hard-block: never render platforms that are not supposed to be listed
+  if(_BLOCKED_PLATFORMS.has(r.name)) return null;
+  const ov = _REDUCED_EXPECTATIONS[r.name];
+  const isDimmed = _DIMMED_SET.has(r.name) || r.dimmed || false;
+  const hasCustomOverride = ov && ov.desc;
+  const warnPt = '';
+  const warnEn = '';
+  const basePt = (ov && ov.desc) ? ov.desc : (r.desc_pt||'');
+  const baseEn = (ov && ov.descEn) ? ov.descEn : (r.desc_en||'');
+  return {
+    name:r.name, cat:r.cat, icon:r.icon,
+    desc: warnPt + basePt,
+    descEn: warnEn + baseEn,
+    earn: r.earn||'',
+    earnN: (r.earn_n != null && r.earn_n > 0) ? r.earn_n : (_EARN_N_DEFAULT[r.cat]||5),
+    minPay: r.min_pay||'Variável',
+    pt:r.pt, eu:r.eu, url:r.url||'',
+    easy: r.easy||3, geo: r.geo||'🌍 Global',
+    top: isDimmed ? false : (r.top || false),
+    dimmed: isDimmed,
+    beginner: r.beginner||false,
+    ratings:r.ratings||{}, aff:{has:false}
+  };
+}
+
+// Returns a generic earn display string based on category (no specific €/h amounts)
+function _genericEarn(cat){
+  const isEn = currentLang === 'en';
+  const map = {
+    pt:{
+      surveys:'Varia por estudo', micro:'Varia por tarefa',
+      freelance:'Varia por projeto/cliente', testing:'Varia por teste',
+      criativo:'Varia por projeto', conteudo:'Varia por conteúdo',
+      tasks:'Variável', transcricao:'Varia por áudio',
+      tutoring:'Varia por aula/plataforma', ugc:'Varia por campanha',
+      passive:'Varia por utilização', remote:'Varia por função',
+      petsitting:'Varia por serviço', babysitting:'Varia por família/horas',
+      gigs:'Varia por entrega', f2f:'Taxa horária'
+    },
+    en:{
+      surveys:'Varies by study', micro:'Varies by task',
+      freelance:'Varies by project/client', testing:'Varies by test',
+      criativo:'Varies by project', conteudo:'Varies by content',
+      tasks:'Variable', transcricao:'Varies by audio',
+      tutoring:'Varies by lesson/platform', ugc:'Varies by campaign',
+      passive:'Varies by usage', remote:'Varies by role',
+      petsitting:'Varies by service', babysitting:'Varies by family/hours',
+      gigs:'Varies by delivery', f2f:'Hourly rate'
+    }
+  };
+  const lang = isEn ? 'en' : 'pt';
+  return map[lang][cat] || (isEn ? 'Variable' : 'Variável');
+}
+
+  // ── Store token securely in memory for Edge Function auth ──
+  // (never stored to disk/localStorage — lives only in JS memory for this session)
+  let _sessionToken = '';
+
+  // ── F2F entries hardcoded here so they survive any P replacement ──
+const _F2F_ENTRIES = [
+  {name:'Amnistia Internacional',cat:'f2f',icon:'🕊️',desc:'Recrutador/captador de sócios Face-to-Face para a Amnistia Internacional Portugal. Trabalho de rua, flexível e bem pago.',descEn:'Face-to-Face fundraiser/member recruiter for Amnesty International Portugal. Street-based, flexible and well-paid.',earn:'€7–12/h',earnN:9,minPay:'Por hora',pt:true,eu:false,url:'https://www.amnistia.pt/projeto-face-to-face/',easy:4,geo:'🇵🇹 Portugal',top:false,dimmed:false,beginner:true,ratings:{payout:3,beginner:true,realistic:3,trust:5}},
+  {name:'APDES',cat:'f2f',icon:'🤝',desc:'Captação de sócios e doadores Face-to-Face para a APDES. Remuneração por hora + bónus de performance.',descEn:'Face-to-Face member and donor fundraising for APDES. Hourly pay + performance bonus.',earn:'€7–12/h',earnN:9,minPay:'Por hora',pt:true,eu:false,url:'https://apdes.pt/pt/face-to-face-vagas/',easy:4,geo:'🇵🇹 Portugal',top:false,dimmed:false,beginner:true,ratings:{payout:3,beginner:true,realistic:3,trust:4}},
+  {name:'ACNUR',cat:'f2f',icon:'🌍',desc:'Captação de doadores para o Alto Comissariado das Nações Unidas para os Refugiados (ACNUR/UNHCR). Projecto F2F em Portugal.',descEn:'Donor fundraising for the UN Refugee Agency (UNHCR) in Portugal. F2F street fundraising project.',earn:'€7–12/h',earnN:9,minPay:'Por hora',pt:true,eu:false,url:'https://pacnur.org/pt/f2f-d2d',easy:4,geo:'🇵🇹 Portugal',top:false,dimmed:false,beginner:true,ratings:{payout:3,beginner:true,realistic:3,trust:5}},
+  {name:'Associação Salvador',cat:'f2f',icon:'♿',desc:'Recrutadores Face-to-Face para a Associação Salvador, que apoia pessoas com lesão medular. Part-time disponível.',descEn:'Face-to-Face recruiters for Associação Salvador, supporting people with spinal cord injuries. Part-time available.',earn:'€7–11/h',earnN:8,minPay:'Por hora',pt:true,eu:false,url:'https://associacaosalvador.com/ofertas_rh/recrutadores-do-projeto-face-to-face/',easy:4,geo:'🇵🇹 Portugal',top:false,dimmed:false,beginner:true,ratings:{payout:3,beginner:true,realistic:3,trust:5}},
+  {name:'Aldeias SOS',cat:'f2f',icon:'👨‍👩‍👧',desc:'Recrutador F2F part-time para as Aldeias de Crianças SOS Portugal. Horários flexíveis, formação incluída.',descEn:'Part-time F2F recruiter for SOS Children\'s Villages Portugal. Flexible hours, training included.',earn:'€7–11/h',earnN:8,minPay:'Por hora',pt:true,eu:false,url:'https://www.aldeias-sos.org/quem-somos/trabalhe-connosco/vagas-abertas/servicos-centrais/part-time-recrutador-face-2-face',easy:4,geo:'🇵🇹 Portugal',top:false,dimmed:false,beginner:true,ratings:{payout:3,beginner:true,realistic:3,trust:5}},
+  {name:'WWF Portugal',cat:'f2f',icon:'🐼',desc:'Captação de doadores e apoiantes Face-to-Face para a WWF Portugal. Defesa da natureza com rendimento estável.',descEn:'Donor and supporter Face-to-Face fundraising for WWF Portugal. Nature conservation with stable income.',earn:'€7–12/h',earnN:9,minPay:'Por hora',pt:true,eu:false,url:'https://apoia.wwf.pt/donativos/vagas-face-to-face',easy:4,geo:'🇵🇹 Portugal',top:false,dimmed:false,beginner:true,ratings:{payout:3,beginner:true,realistic:3,trust:5}},
+  {name:'Operação Nariz Vermelho',cat:'f2f',icon:'🤡',desc:'Recrutadores Face-to-Face para a Operação Nariz Vermelho, que leva palhaços a hospitais pediátricos.',descEn:'Face-to-Face recruiters for Operação Nariz Vermelho, bringing clowns to paediatric hospitals.',earn:'€7–11/h',earnN:8,minPay:'Por hora',pt:true,eu:false,url:'https://narizvermelho.pt/recrutamento/#RecrutamentoFacetoFace',easy:4,geo:'🇵🇹 Portugal',top:false,dimmed:false,beginner:true,ratings:{payout:3,beginner:true,realistic:3,trust:5}},
+];
+function _mergeF2F(){ if(!P.some(p=>p.cat==='f2f')) P=P.concat(_F2F_ENTRIES); }
+
+// ══ SECÇÃO 4 — NOVAS PLATAFORMAS ═══════════════════════════════════
+const _EXTRA_ENTRIES = [
+  // ── Surveys PT ───────────────────────────────────────────────────
+  {name:'Voz do Consumidor',cat:'surveys',icon:'🗣️',
+   desc:'Painel de inquéritos para consumidores portugueses. Partilha a tua opinião sobre produtos e serviços e recebe compensação em pontos ou dinheiro.',
+   descEn:'Survey panel for Portuguese consumers. Share your opinion on products and services and receive compensation in points or cash.',
+   earn:'Variável por inquérito',earnN:3,minPay:'Por inquérito',pt:true,eu:false,
+   url:'https://www.vozdoconsumidor.pt/quero-participar/',easy:4,geo:'🇵🇹 Portugal',top:false,dimmed:false,beginner:true,
+   ratings:{payout:3,beginner:true,realistic:2,trust:4}},
+
+  {name:'Mundo de Opiniões',cat:'surveys',icon:'💬',
+   desc:'Plataforma portuguesa de surveys pagos. Regista-te, preenche o teu perfil e começa a receber convites para inquéritos de mercado.',
+   descEn:'Portuguese paid survey platform. Register, fill in your profile and start receiving market research survey invitations.',
+   earn:'Variável por inquérito',earnN:3,minPay:'Por inquérito',pt:true,eu:false,
+   url:'https://www.mundodeopinioes.com.pt/',easy:4,geo:'🇵🇹 Portugal',top:false,dimmed:false,beginner:true,
+   ratings:{payout:3,beginner:true,realistic:2,trust:4}},
+
+  {name:'Opiniões de Valor',cat:'surveys',icon:'⭐',
+   desc:'Plataforma de surveys pagos para utilizadores portugueses. Partilha a tua opinião e ganha pontos convertíveis em dinheiro ou prémios.',
+   descEn:'Paid survey platform for Portuguese users. Share your opinion and earn points convertible to cash or prizes.',
+   earn:'Variável por inquérito',earnN:3,minPay:'Por inquérito',pt:true,eu:false,
+   url:'https://www.opinioesdevalor.com/surveys',easy:4,geo:'🇵🇹 Portugal',top:false,dimmed:false,beginner:true,
+   ratings:{payout:3,beginner:true,realistic:2,trust:4}},
+
+  {name:'Palpito',cat:'surveys',icon:'🎯',
+   desc:'Plataforma portuguesa de sondagens e opiniões. Partilha as tuas previsões e opiniões sobre temas da atualidade e ganha recompensas.',
+   descEn:'Portuguese polling and opinion platform. Share your predictions and opinions on current topics and earn rewards.',
+   earn:'Recompensas variáveis',earnN:2,minPay:'Por participação',pt:true,eu:false,
+   url:'https://palpito.pt/',easy:5,geo:'🇵🇹 Portugal',top:false,dimmed:false,beginner:true,
+   ratings:{payout:3,beginner:true,realistic:2,trust:3}},
+
+  {name:'Netsonda',cat:'surveys',icon:'📊',
+   desc:'Comunidade de pesquisa portuguesa desde 2003. Participa em inquéritos online e influencia decisões de empresas nacionais e internacionais.',
+   descEn:'Portuguese research community since 2003. Participate in online surveys and influence decisions of national and international companies.',
+   earn:'Variável por inquérito',earnN:3,minPay:'Por inquérito',pt:true,eu:false,
+   url:'https://www.netsonda.pt/comunidade-netsonda/inscricao-netsonda/',easy:4,geo:'🇵🇹 Portugal',top:false,dimmed:false,beginner:true,
+   ratings:{payout:3,beginner:true,realistic:2,trust:4}},
+
+  {name:'Boutique Opiniões',cat:'surveys',icon:'🛍️',
+   desc:'Plataforma de surveys pagos com foco em tendências de consumo e lifestyle. Comunidade portuguesa de partilha de opiniões sobre marcas e produtos.',
+   descEn:'Paid survey platform focused on consumer trends and lifestyle. Portuguese community for sharing opinions on brands and products.',
+   earn:'Variável por inquérito',earnN:3,minPay:'Por inquérito',pt:true,eu:false,
+   url:'https://boutique-opinioes.pt/',easy:4,geo:'🇵🇹 Portugal',top:false,dimmed:false,beginner:true,
+   ratings:{payout:3,beginner:true,realistic:2,trust:4}},
+
+  {name:'Questionários Online',cat:'surveys',icon:'📝',
+   desc:'Painel de questionários online para utilizadores portugueses. Regista-te e participa em estudos de mercado e académicos remunerados.',
+   descEn:'Online questionnaire panel for Portuguese users. Register and participate in paid market research and academic studies.',
+   earn:'Variável por questionário',earnN:3,minPay:'Por questionário',pt:true,eu:false,
+   url:'https://painel.questionarios-online.com/landing',easy:4,geo:'🇵🇹 Portugal',top:false,dimmed:false,beginner:true,
+   ratings:{payout:3,beginner:true,realistic:2,trust:4}},
+
+  {name:'TGM Panel',cat:'surveys',icon:'📋',
+   desc:'Painel internacional de surveys com versão portuguesa. Participa em inquéritos pagos e levanta os ganhos via PayPal.',
+   descEn:'International survey panel with Portuguese version. Participate in paid surveys and withdraw earnings via PayPal.',
+   earn:'Variável por inquérito',earnN:3,minPay:'Por inquérito',pt:true,eu:true,
+   url:'https://tgmpanel.pt/join.html',easy:4,geo:'🇵🇹 Portugal + UE',top:false,dimmed:false,beginner:true,
+   ratings:{payout:3,beginner:true,realistic:2,trust:4}},
+
+  {name:'Voissy',cat:'surveys',icon:'🎙️',
+   desc:'Plataforma de estudos qualitativos em áudio e vídeo. Partilha a tua opinião em formato vídeo ou áudio e recebe compensação — projetos em PT disponíveis.',
+   descEn:'Qualitative research platform using audio and video. Share your opinion in video or audio format and receive compensation — PT projects available.',
+   earn:'Variável por estudo',earnN:5,minPay:'Por estudo',pt:true,eu:true,
+   url:'https://voissy.com/pt_PT',easy:4,geo:'🇵🇹 Portugal + UE',top:false,dimmed:false,beginner:true,
+   ratings:{payout:3,beginner:true,realistic:3,trust:4}},
+
+  {name:'Opiday',cat:'surveys',icon:'💡',
+   desc:'Plataforma de surveys com sistema de referências. Ganha pontos por inquéritos e por indicar amigos — levantamento por PayPal.',
+   descEn:'Survey platform with referral system. Earn points for surveys and for referring friends — withdrawal via PayPal.',
+   earn:'Variável por inquérito',earnN:3,minPay:'Por inquérito',pt:true,eu:true,
+   url:'https://opiday.com/en',easy:4,geo:'🇵🇹 Portugal + UE',top:false,dimmed:false,beginner:true,
+   ratings:{payout:3,beginner:true,realistic:2,trust:3}},
+
+  {name:'Opinionz',cat:'surveys',icon:'🔍',
+   desc:'Plataforma de pesquisa de mercado com versão em português. Participa em surveys e contribui para estudos académicos e de mercado internacionais.',
+   descEn:'Market research platform with Portuguese version. Participate in surveys and contribute to international academic and market studies.',
+   earn:'Variável por inquérito',earnN:3,minPay:'Por inquérito',pt:true,eu:true,
+   url:'https://www.opinionz.io/index.php/pt/',easy:4,geo:'🇵🇹 Portugal + UE',top:false,dimmed:false,beginner:true,
+   ratings:{payout:3,beginner:true,realistic:2,trust:3}},
+
+  {name:'Mobrog',cat:'surveys',icon:'📱',
+   desc:'Plataforma global de surveys disponível em Portugal. Participa em inquéritos online ou via app e recebe compensação por PayPal.',
+   descEn:'Global survey platform available in Portugal. Participate in online or app-based surveys and receive PayPal compensation.',
+   earn:'Variável por inquérito',earnN:3,minPay:'Por inquérito',pt:true,eu:true,
+   url:'https://www.mobrog.com/',easy:4,geo:'🇵🇹 Portugal + UE',top:false,dimmed:false,beginner:true,
+   ratings:{payout:3,beginner:true,realistic:2,trust:4}},
+
+  {name:'AttaPoll',cat:'surveys',icon:'📊',
+   desc:'App de surveys para smartphone. Fácil de usar, paga por PayPal. Disponível em Portugal — o volume de surveys pode ser limitado mas o processo é simples.',
+   descEn:'Smartphone survey app. Easy to use, pays via PayPal. Available in Portugal — survey volume may be limited but the process is simple.',
+   earn:'Variável por inquérito',earnN:3,minPay:'Por inquérito',pt:true,eu:true,
+   url:'https://attapoll.com/pt-pt/earnapp',easy:5,geo:'🇵🇹 Portugal + UE',top:true,dimmed:false,beginner:true,
+   ratings:{payout:4,beginner:true,realistic:2,trust:4}},
+
+  {name:'Lootup',cat:'surveys',icon:'🎁',
+   desc:'Plataforma de recompensas online. Ganha pontos por surveys, ofertas e tarefas simples — levantamento por PayPal ou gift cards.',
+   descEn:'Online rewards platform. Earn points through surveys, offers and simple tasks — withdraw via PayPal or gift cards.',
+   earn:'Variável',earnN:3,minPay:'Variável',pt:true,eu:true,
+   url:'https://lootup.me/',easy:4,geo:'🌍 Global',top:false,dimmed:false,beginner:true,
+   ratings:{payout:3,beginner:true,realistic:2,trust:3}},
+
+  // ── Research / Academic ──────────────────────────────────────────
+  {name:'CLSBE PEO (Católica)',cat:'surveys',icon:'🎓',
+   desc:'Painel de investigação da Católica Lisbon School of Business and Economics. Participa em estudos académicos remunerados — acesso facilitado para estudantes em Portugal.',
+   descEn:'Research panel from Católica Lisbon School of Business and Economics. Participate in paid academic studies — easier access for students in Portugal.',
+   earn:'Variável por estudo',earnN:4,minPay:'Por estudo',pt:true,eu:false,
+   url:'https://clsbe-peo.sona-systems.com/student_new_user.aspx',easy:4,geo:'🇵🇹 Portugal',top:false,dimmed:false,beginner:true,
+   ratings:{payout:3,beginner:true,realistic:3,trust:5}},
+
+  // ── Micro-tarefas / Apps ─────────────────────────────────────────
+  {name:'Storewards',cat:'micro',icon:'🛒',
+   desc:'App portuguesa de missões em supermercados e lojas. Completa tarefas de verificação de preços e produtos para ganhar recompensas — simples e rápido.',
+   descEn:'Portuguese app for missions in supermarkets and stores. Complete price and product verification tasks to earn rewards — simple and quick.',
+   earn:'Recompensas por missão',earnN:3,minPay:'Por missão',pt:true,eu:false,
+   url:'https://play.google.com/store/apps/details?id=co.storewards&hl=pt_PT',easy:5,geo:'🇵🇹 Portugal',top:false,dimmed:false,beginner:true,
+   ratings:{payout:3,beginner:true,realistic:2,trust:4}},
+
+  // CloudWorkers removed from listing
+
+  // ── Gigs ─────────────────────────────────────────────────────────
+  {name:'Worldpackers',cat:'gigs',icon:'🌍',
+   desc:'Troca trabalho voluntário (hospedagem, marketing, ensino) por alojamento e refeições em todo o mundo. Não é pago em dinheiro — é uma forma de viver e viajar com custos muito reduzidos.',
+   descEn:'Exchange volunteer work (hosting, marketing, teaching) for accommodation and meals worldwide. Not cash-paid — a way to live and travel at very low cost.',
+   earn:'Alojamento + refeições',earnN:5,minPay:'Por acordo',pt:false,eu:false,
+   url:'https://www.worldpackers.com/',easy:4,geo:'🌍 Global',top:false,dimmed:false,beginner:true,
+   ratings:{payout:3,beginner:true,realistic:3,trust:4}},
+
+  {name:'Ordo Events',cat:'gigs',icon:'🎧',
+   desc:'Plataforma para DJs encontrarem gigs em eventos. Regista o teu perfil, define o teu preço e recebe propostas de clientes — disponível em Portugal e Europa.',
+   descEn:'Platform for DJs to find event gigs. Create your profile, set your rate and receive client proposals — available in Portugal and Europe.',
+   earn:'Variável por gig',earnN:8,minPay:'Por gig',pt:true,eu:true,
+   url:'https://www.ordo.events/join',easy:3,geo:'🇵🇹 Portugal + Europa',top:false,dimmed:false,beginner:false,
+   ratings:{payout:3,beginner:false,realistic:3,trust:3}},
+
+  {name:'Uber Driver',cat:'gigs',icon:'🚗',
+   desc:'Torna-te motorista da Uber em Portugal. Requer veículo próprio (condições mínimas), carta de condução, certificado TVDE e registo na plataforma.',
+   descEn:'Become an Uber driver in Portugal. Own vehicle (minimum conditions), driving licence, TVDE certificate and platform registration required.',
+   earn:'Variável por corrida',earnN:9,minPay:'Por corrida',pt:true,eu:false,
+   url:'https://www.uber.com/pt/pt/drive/',easy:3,geo:'🇵🇹 Portugal',top:false,dimmed:false,beginner:false,
+   ratings:{payout:4,beginner:false,realistic:3,trust:5}},
+
+  {name:'Bolt Driver',cat:'gigs',icon:'⚡',
+   desc:'Torna-te motorista da Bolt em Portugal. Requisitos semelhantes à Uber: veículo próprio, carta de condução e certificado TVDE. Comissões ligeiramente menores.',
+   descEn:'Become a Bolt driver in Portugal. Similar requirements to Uber: own vehicle, driving licence and TVDE certificate. Slightly lower commissions.',
+   earn:'Variável por corrida',earnN:9,minPay:'Por corrida',pt:true,eu:false,
+   url:'https://driver.bolt.eu/en-gb/cities/portugal/',easy:3,geo:'🇵🇹 Portugal',top:false,dimmed:false,beginner:false,
+   ratings:{payout:4,beginner:false,realistic:3,trust:5}},
+
+  {name:'Carteiro CTT',cat:'gigs',icon:'📮',
+   desc:'Inscreve-te na bolsa de carteiros dos CTT — Correios de Portugal. Trabalho presencial de entrega de correio e encomendas. Requer disponibilidade e boa condição física.',
+   descEn:'Join the CTT postal worker pool — Portugal\'s postal service. In-person mail and parcel delivery. Good physical condition and availability required.',
+   earn:'Salário por hora',earnN:8,minPay:'Por hora',pt:true,eu:false,
+   url:'https://www.ctt.pt/grupo-ctt/carreiras/bolsa-de-carteiros',easy:3,geo:'🇵🇹 Portugal',top:false,dimmed:false,beginner:false,
+   ratings:{payout:4,beginner:false,realistic:4,trust:5}},
+
+  // ── Face to Face ─────────────────────────────────────────────────
+  {name:'Guia Tuk Tuk',cat:'f2f',icon:'🛺',
+   desc:'Torna-te guia de Tuk Tuk em Lisboa e Porto. A gotuk.pt e ecotuktuk.com recrutam guias para circuitos turísticos. Requer carta de condução AM/B e bom nível de inglês.',
+   descEn:'Become a Tuk Tuk guide in Lisbon and Porto. gotuk.pt and ecotuktuk.com recruit guides for tourist circuits. AM/B driving licence and good English required.',
+   earn:'Gorjetas + comissão',earnN:8,minPay:'Por tour',pt:true,eu:false,
+   url:'https://gotuk.pt/business-guides/#guide',easy:3,geo:'🇵🇹 Portugal',top:false,dimmed:false,beginner:false,
+   ratings:{payout:3,beginner:false,realistic:3,trust:4}},
+
+  {name:'New Europe Tours (Walking)',cat:'f2f',icon:'🚶',
+   desc:'Torna-te guia de Walking Tours em Portugal pela New Europe Tours. Modelo tip-based: os guias ficam com as gorjetas dos turistas. Requer inglês fluente e candidatura.',
+   descEn:'Become a Walking Tour guide in Portugal with New Europe Tours. Tip-based model: guides keep tourist tips. Fluent English and application required.',
+   earn:'Gorjetas (tip-based)',earnN:9,minPay:'Por tour',pt:true,eu:true,
+   url:'https://www.neweuropetours.eu/guide-with-us/',easy:3,geo:'🇵🇹 Portugal + Europa',top:false,dimmed:false,beginner:false,
+   ratings:{payout:3,beginner:false,realistic:3,trust:4}},
+
+  {name:'Eloquence Events',cat:'f2f',icon:'🎉',
+   desc:'Agência de staff para eventos em Portugal e Espanha. Inscreve-te para trabalhar como promotor, rececionista ou assistente em eventos, feiras e lançamentos.',
+   descEn:'Event staffing agency in Portugal and Spain. Register to work as promoter, receptionist or assistant at events, trade fairs and launches.',
+   earn:'€8–12/h',earnN:9,minPay:'Por hora',pt:true,eu:true,
+   url:'https://eloquence.es/pt/',easy:3,geo:'🇵🇹 Portugal + 🇪🇸 Espanha',top:false,dimmed:false,beginner:true,
+   ratings:{payout:3,beginner:true,realistic:3,trust:4}},
+
+  {name:'Spring Events',cat:'f2f',icon:'🌸',
+   desc:'Empresa portuguesa de eventos que recruta staff freelance. Trabalha em eventos, feiras, lançamentos e experiências de marca em Portugal.',
+   descEn:'Portuguese event company that recruits freelance staff. Work at events, trade fairs, launches and brand experiences in Portugal.',
+   earn:'€8–12/h',earnN:9,minPay:'Por hora',pt:true,eu:false,
+   url:'https://www.springevents.pt/pages/recruitment',easy:3,geo:'🇵🇹 Portugal',top:false,dimmed:false,beginner:true,
+   ratings:{payout:3,beginner:true,realistic:3,trust:4}},
+
+  {name:'Casamentos.pt (Eventos)',cat:'f2f',icon:'💒',
+   desc:'Inscreve-te para trabalhar em casamentos e eventos como fornecedor de serviços — fotografia, catering, animação, DJ, florista, etc. Plataforma portuguesa líder de setor.',
+   descEn:'Register to work at weddings and events as a service provider — photography, catering, entertainment, DJ, florist, etc. Leading Portuguese sector platform.',
+   earn:'Variável por evento',earnN:10,minPay:'Por evento',pt:true,eu:false,
+   url:'https://www.casamentos.pt/emp-Acceso.php',easy:3,geo:'🇵🇹 Portugal',top:false,dimmed:false,beginner:false,
+   ratings:{payout:3,beginner:false,realistic:3,trust:4}},
+
+  // ── Tutoring / Coaching ──────────────────────────────────────────
+  {name:'TrueCoach',cat:'tutoring',icon:'🏋️',
+   desc:'Plataforma de coaching fitness online para personal trainers. Cria programas personalizados, acompanha clientes à distância e recebe pagamentos mensais recorrentes. Ideal para instrutores com carteira de clientes própria.',
+   descEn:'Online fitness coaching platform for personal trainers. Build personalised programmes, track clients remotely and receive recurring monthly payments. Ideal for instructors with an existing client base.',
+   earn:'Variável por cliente',earnN:15,minPay:'Por mês/cliente',pt:false,eu:true,
+   url:'https://app.truecoach.co/sign-up/',easy:3,geo:'🌍 Global',top:false,dimmed:false,beginner:false,
+   ratings:{payout:4,beginner:false,realistic:4,trust:4}},
+
+  // ── Novas plataformas adicionadas ────────────────────────────────
+  {name:'OnePulse',cat:'surveys',icon:'🟢',
+   desc:'App de micro-surveys rápidos — cada pulse tem apenas algumas perguntas. Simples, gratuita e disponível em Portugal. Ótima para iniciantes.',
+   descEn:'Quick micro-survey app — each pulse has only a few questions. Simple, free and available in Portugal. Great for beginners.',
+   earn:'Variável por survey',earnN:3,minPay:'Por survey',pt:true,eu:true,
+   url:'https://www.onepulse.com/pt-pt/aplicativo/',easy:5,geo:'🇵🇹 Portugal + UE',top:true,dimmed:false,beginner:true,
+   ratings:{payout:4,beginner:true,realistic:3,trust:4}},
+
+  {name:'SurveyTime',cat:'surveys',icon:'⏱️',
+   desc:'Plataforma de surveys online com pagamento por PayPal após cada survey completo. Registo simples, sem pontos — ganhos diretos.',
+   descEn:'Online survey platform with PayPal payment after each completed survey. Simple registration, no points — direct earnings.',
+   earn:'Variável por survey',earnN:3,minPay:'Por survey',pt:true,eu:true,
+   url:'https://surveytime.io/',easy:5,geo:'🌍 Global',top:false,dimmed:false,beginner:true,
+   ratings:{payout:4,beginner:true,realistic:2,trust:4}},
+
+  {name:'Freecash',cat:'tasks',icon:'💸',
+   desc:'Plataforma de recompensas online. Completa offers, surveys e tarefas para ganhar moedas convertíveis em dinheiro (PayPal, cripto ou gift cards).',
+   descEn:'Online rewards platform. Complete offers, surveys and tasks to earn coins convertible to cash (PayPal, crypto or gift cards).',
+   earn:'Variável por tarefa',earnN:4,minPay:'Por tarefa',pt:true,eu:true,
+   url:'https://freecash.com/',easy:5,geo:'🌍 Global',top:false,dimmed:false,beginner:true,
+   ratings:{payout:4,beginner:true,realistic:2,trust:4}},
+
+  {name:'ySense',cat:'surveys',icon:'💡',
+   desc:'Plataforma de surveys e micro-tarefas com boa reputação global. Ganha por inquéritos, tarefas e referências — levantamento por PayPal.',
+   descEn:'Survey and micro-task platform with a solid global reputation. Earn from surveys, tasks and referrals — withdraw via PayPal.',
+   earn:'Variável por survey',earnN:3,minPay:'Por survey',pt:true,eu:true,
+   url:'https://www.ysense.com/?rb=126',easy:5,geo:'🌍 Global',top:false,dimmed:false,beginner:true,
+   ratings:{payout:3,beginner:true,realistic:2,trust:4}},
+
+  {name:'NiceQuest',cat:'surveys',icon:'🌟',
+   desc:'Comunidade de surveys com versão em português (Embaixadores). Responde a inquéritos, recolhe "Shells" e troca por prémios ou doações.',
+   descEn:'Survey community with Portuguese version (Ambassadors). Answer surveys, collect Shells and redeem for prizes or donations.',
+   earn:'Recompensas por survey',earnN:2,minPay:'Por survey',pt:true,eu:true,
+   url:'https://www.nicequest.com/pt/home',easy:5,geo:'🇵🇹 Portugal + UE',top:false,dimmed:false,beginner:true,
+   ratings:{payout:3,beginner:true,realistic:2,trust:4}},
+
+  {name:'Sua Opinião Conta',cat:'surveys',icon:'💬',
+   desc:'Plataforma de surveys pagos para o mercado português e brasileiro. Responde a inquéritos e levanta os teus ganhos via PayPal.',
+   descEn:'Paid survey platform for the Portuguese and Brazilian market. Answer surveys and withdraw your earnings via PayPal.',
+   earn:'Variável por inquérito',earnN:3,minPay:'Por inquérito',pt:true,eu:false,
+   url:'https://www.suaopiniaoconta.com/',easy:4,geo:'🇵🇹 Portugal + 🇧🇷 Brasil',top:false,dimmed:false,beginner:true,
+   ratings:{payout:3,beginner:true,realistic:2,trust:3}},
+];
+
+function _mergeExtra(){
+  // Normalize a name for comparison (trim + collapse whitespace + lowercase)
+  const norm = s => s.trim().replace(/\s+/g,' ').toLowerCase();
+  const existing = new Set(P.map(p=>norm(p.name)));
+  const toAdd = _EXTRA_ENTRIES.filter(e=>!existing.has(norm(e.name)) && !_BLOCKED_PLATFORMS.has(e.name));
+  if(toAdd.length) P = P.concat(toAdd);
+}
+
+// ── Rate limiting do lado do cliente (UX apenas — a proteção real está no Supabase).
+async function validarTokenSupabase(token) {
+  const lockErr = document.getElementById('lockErr');
+  const lockBtn = document.getElementById('lockBtn');
+  // ── Client-side rate limiting (UX only — real protection is server-side in Supabase) ──
+  const _ss = parseInt(sessionStorage.getItem('_rlc')||'0');
+  if(_ss >= 5){
+    if(lockErr) lockErr.textContent = currentLang==='en'
+      ? 'Too many attempts. Please restart your browser.'
+      : 'Demasiadas tentativas. Reinicia o browser.';
+    return;
+  }
+  sessionStorage.setItem('_rlc', String(_ss+1));
+  const _rl = (() => { try { const v = JSON.parse(localStorage.getItem('_rl')||'{"c":0,"t":0}'); return (v && typeof v.c==='number' && typeof v.t==='number') ? v : {c:0,t:0}; } catch(e){ return {c:0,t:0}; } })();
+  const now = Date.now();
+  if(now - _rl.t > 3600000){ _rl.c = 0; _rl.t = now; }
+  if(_rl.c >= 5){
+    const wait = Math.ceil((3600000-(now-_rl.t))/60000);
+    if(lockErr) lockErr.textContent = currentLang==='en'
+      ? `Too many attempts. Try again in ${wait} min.`
+      : `Demasiadas tentativas. Tenta em ${wait} min.`;
+    return;
+  }
+  _rl.c++; localStorage.setItem('_rl', JSON.stringify(_rl));
+  if(!_SB) {
+    if(lockErr) lockErr.textContent = currentLang==='en'
+      ? 'Connection error. Please reload the page.'
+      : 'Erro de ligação. Recarrega a página.';
+    return false;
+  }
+  try {
+    const verifyingTxt = currentLang==='en' ? 'Verifying…' : 'A verificar…';
+    if(lockErr) lockErr.textContent = verifyingTxt;
+    const { data, error } = await _SB.rpc('unlock_with_token', { p_token: token.trim(), p_ip_hash: '' });
+    if(error) {
+      console.error('Supabase error:', error);
+      const inp=document.getElementById('lockInput');
+      if(inp){inp.classList.add('shake');setTimeout(()=>inp.classList.remove('shake'),400);}
+      if(lockErr) lockErr.textContent = currentLang==='en'
+        ? 'Verification failed. Please try again.'
+        : 'Erro na verificação. Tenta novamente.';
+      return false;
+    }
+    if(!data || data.valid === false) {
+      const inp=document.getElementById('lockInput');
+      if(inp){inp.classList.add('shake');setTimeout(()=>inp.classList.remove('shake'),400);}
+      if(lockErr) lockErr.textContent = currentLang==='en'
+        ? 'Invalid or unrecognised access key.'
+        : 'Chave de acesso inválida ou não reconhecida.';
+      return false;
+    }
+    // SUCESSO
+    hasAccess = true;
+    _sessionToken = token.trim(); // kept in memory only for Edge Function auth
+    localStorage.removeItem('_rl');
+    sessionStorage.removeItem('_rlc');
+    if(data.platforms && data.platforms.length > 0) {
+      P = data.platforms.map(_fmt).filter(Boolean); // filter(Boolean) removes blocked platforms
+    }
+    // Always ensure F2F entries are present (they live in _F2F_ENTRIES, not in the DB)
+    _mergeF2F();
+    // Always ensure Section 4 extra entries are present
+    _mergeExtra();
+    // else keep local P array
+    // Remove token from URL bar after successful login (prevents token in browser history & referrer headers)
+    try{
+      const cleanPath = window.location.pathname + (window.location.search || '');
+      window.history.replaceState({}, '', cleanPath);
+      // Explicitly clear hash to prevent token appearing in referrer header on outbound links
+      if(window.location.hash) window.history.replaceState({}, '', cleanPath);
+    }catch(e){}
+    if(lockErr) lockErr.textContent = '';
+    const ls = document.getElementById('lockScreen');
+    if(ls) { ls.classList.add('unlocked'); setTimeout(() => ls.style.display='none', 600); }
+    document.body.style.overflow = 'auto';
+    if(typeof render === 'function') render();
+    if(!localStorage.getItem('gh_welcomed')) {
+      localStorage.setItem('gh_welcomed','1');
+      const wm = document.getElementById('welcomeModal');
+      if(wm) wm.style.display='flex';
+      if(typeof applyLang==='function') applyLang();
+    }
+    return true;
+  } catch(e) {
+    console.error('Unexpected error:', e);
+    if(lockErr) lockErr.textContent = currentLang==='en'
+      ? 'Connection error. Please try again.'
+      : 'Erro de ligação. Tenta novamente.';
+    return false;
+  }
+}
+
+// Override unlock function
+window.unlock = async function() {
+  const inp = document.getElementById('lockInput');
+  const btn = document.getElementById('lockBtn');
+  if(!inp || !inp.value.trim()) return;
+  const t = translations[currentLang] || translations['pt'];
+  if(btn) { btn.textContent = t.lockVerifying || 'A verificar…'; btn.disabled=true; }
+  // Sanitise: only alphanumeric, dash, underscore; 6–64 chars
+  const cleanToken = inp.value.trim().replace(/[^a-zA-Z0-9_\-]/g,'').substring(0,64);
+  if(!cleanToken || cleanToken.length < 6) {
+    if(btn){btn.textContent = t.lockEnter || 'Entrar →'; btn.disabled=false;}
+    const lockErr = document.getElementById('lockErr');
+    if(lockErr) lockErr.textContent = currentLang==='en' ? 'Invalid access key format.' : 'Formato de chave inválido.';
+    return;
+  }
+  await validarTokenSupabase(cleanToken);
+  if(btn) { btn.textContent = t.lockEnter || 'Entrar →'; btn.disabled=false; }
+};
+
+
+function openLegalModal(type) {
+  // Validate type against known values to prevent prototype pollution / unexpected access
+  const VALID_TYPES = ['privacy', 'terms', 'disclaimer'];
+  if (!VALID_TYPES.includes(type)) return;
+  const isEn = currentLang === 'en';
+  const modal = document.getElementById('legalModal');
+  const content = document.getElementById('legalContent');
+  const pages = {
+    privacy: {
+      pt: `<h2 style="font-family:'Fraunces',serif;font-size:22px;font-weight:900;margin-bottom:20px">Política de Privacidade</h2>
+<p style="font-size:13px;color:var(--grey);margin-bottom:16px">Última actualização: Maio 2026</p>
+<h3 style="font-size:14px;font-weight:700;margin-bottom:8px;margin-top:20px">Dados que recolhemos</h3>
+<p style="font-size:13px;color:var(--grey);line-height:1.7;margin-bottom:12px">Recolhemos apenas os dados necessários para fornecer o serviço, incluindo informação de contacto e respostas ao formulário GigBoost enviadas voluntariamente.</p>
+<h3 style="font-size:14px;font-weight:700;margin-bottom:8px;margin-top:20px">Porque recolhemos</h3>
+<p style="font-size:13px;color:var(--grey);line-height:1.7;margin-bottom:12px">Os dados são usados exclusivamente para fornecer o serviço adquirido — acesso à plataforma e/ou recomendações personalizadas GigBoost. Base legal: execução de contrato (Art. 6.º n.º 1 al. b) do RGPD).</p>
+<h3 style="font-size:14px;font-weight:700;margin-bottom:8px;margin-top:20px">Processamento via WhatsApp / Meta</h3>
+<p style="font-size:13px;color:var(--grey);line-height:1.7;margin-bottom:12px">O serviço GigBoost utiliza o WhatsApp (operado pela Meta Platforms, Inc.) para receber comprovativo de pagamento e enviar recomendações personalizadas. Ao submeteres o formulário GigBoost, os dados do teu perfil (país, faixa etária, objetivos, skills) são transmitidos via WhatsApp e ficam sujeitos à <a href="https://www.whatsapp.com/legal/privacy-policy" target="_blank" rel="noopener noreferrer" style="color:var(--gold)">Política de Privacidade da Meta</a>. Não utilizamos esses dados para fins de marketing. Se preferires não utilizar o WhatsApp, contacta-nos por e-mail.</p>
+<h3 style="font-size:14px;font-weight:700;margin-bottom:8px;margin-top:20px">Cookies e analytics</h3>
+<p style="font-size:13px;color:var(--grey);line-height:1.7;margin-bottom:12px">Não usamos cookies de rastreamento nem ferramentas de analytics de terceiros. O acesso é gerido por tokens únicos sem identificação pessoal.</p>
+<h3 style="font-size:14px;font-weight:700;margin-bottom:8px;margin-top:20px">Pagamentos</h3>
+<p style="font-size:13px;color:var(--grey);line-height:1.7;margin-bottom:12px">Os pagamentos são efectuados via MB Way ou transferência bancária. Não armazenamos dados de pagamento.</p>
+<h3 style="font-size:14px;font-weight:700;margin-bottom:8px;margin-top:20px">Segurança e prevenção de abuso</h3>
+<p style="font-size:13px;color:var(--grey);line-height:1.7;margin-bottom:12px">Para proteger a integridade do serviço e prevenir a partilha não autorizada ou uso abusivo de acessos, os nossos sistemas registam metadados de autenticação associados a cada token — incluindo timestamps de validação e endereço IP da ligação. Esta recolha tem como base legal o interesse legítimo do responsável pelo tratamento (Art. 6.º n.º 1 al. f) do RGPD), nomeadamente a segurança do serviço e a prevenção de fraude. Estes dados não são partilhados com terceiros e são retidos apenas pelo tempo necessário para fins de segurança.</p>
+<h3 style="font-size:14px;font-weight:700;margin-bottom:8px;margin-top:20px">Segurança</h3>
+<p style="font-size:13px;color:var(--grey);line-height:1.7;margin-bottom:12px">Nunca te pedimos o teu código de acesso de volta, NIF, palavras-passe ou dados bancários completos. Se receberes uma mensagem a solicitar esses dados em nome da GigHub, trata-se de fraude.</p>
+<h3 style="font-size:14px;font-weight:700;margin-bottom:8px;margin-top:20px">RGPD</h3>
+<p style="font-size:13px;color:var(--grey);line-height:1.7;margin-bottom:12px">Nos termos do RGPD, tens direito a aceder, corrigir, portabilizar ou eliminar os teus dados. Para exercer estes direitos, contacta-nos em gighubpro@gmail.com. Tens ainda o direito de apresentar queixa à CNPD (Comissão Nacional de Proteção de Dados).</p>`,
+      en: `<h2 style="font-family:'Fraunces',serif;font-size:22px;font-weight:900;margin-bottom:20px">Privacy Policy</h2>
+<p style="font-size:13px;color:var(--grey);margin-bottom:16px">Last updated: May 2026</p>
+<h3 style="font-size:14px;font-weight:700;margin-bottom:8px;margin-top:20px">Data we collect</h3>
+<p style="font-size:13px;color:var(--grey);line-height:1.7;margin-bottom:12px">We only collect the data necessary to provide the service, including contact information and GigBoost form responses submitted voluntarily.</p>
+<h3 style="font-size:14px;font-weight:700;margin-bottom:8px;margin-top:20px">Why we collect it</h3>
+<p style="font-size:13px;color:var(--grey);line-height:1.7;margin-bottom:12px">Data is used solely to provide the purchased service — platform access and/or personalised GigBoost recommendations. Legal basis: performance of a contract (Art. 6(1)(b) GDPR).</p>
+<h3 style="font-size:14px;font-weight:700;margin-bottom:8px;margin-top:20px">Processing via WhatsApp / Meta</h3>
+<p style="font-size:13px;color:var(--grey);line-height:1.7;margin-bottom:12px">The GigBoost service uses WhatsApp (operated by Meta Platforms, Inc.) to receive proof of payment and deliver personalised recommendations. By submitting the GigBoost form, your profile data (country, age range, goals, skills) is transmitted via WhatsApp and is subject to <a href="https://www.whatsapp.com/legal/privacy-policy" target="_blank" rel="noopener noreferrer" style="color:var(--gold)">Meta's Privacy Policy</a>. We do not use this data for marketing purposes. If you prefer not to use WhatsApp, contact us by email.</p>
+<h3 style="font-size:14px;font-weight:700;margin-bottom:8px;margin-top:20px">Cookies &amp; analytics</h3>
+<p style="font-size:13px;color:var(--grey);line-height:1.7;margin-bottom:12px">We do not use advertising trackers or invasive third-party analytics tools. Access is managed by unique tokens without personal identification.</p>
+<h3 style="font-size:14px;font-weight:700;margin-bottom:8px;margin-top:20px">Payments</h3>
+<p style="font-size:13px;color:var(--grey);line-height:1.7;margin-bottom:12px">Payments are made via MB Way or bank transfer. We do not store payment data. Payment receipts shared via WhatsApp may contain personal data (name, IBAN) which is processed solely for order confirmation.</p>
+<h3 style="font-size:14px;font-weight:700;margin-bottom:8px;margin-top:20px">Security &amp; abuse prevention</h3>
+<p style="font-size:13px;color:var(--grey);line-height:1.7;margin-bottom:12px">To protect the integrity of the service and prevent unauthorised sharing or abusive use of access tokens, our systems log authentication metadata associated with each token — including validation timestamps and connection IP address. This processing is based on the legitimate interests of the data controller (Art. 6(1)(f) GDPR), specifically service security and fraud prevention. This data is not shared with third parties and is retained only for as long as necessary for security purposes.</p>
+<h3 style="font-size:14px;font-weight:700;margin-bottom:8px;margin-top:20px">Security notice</h3>
+<p style="font-size:13px;color:var(--grey);line-height:1.7;margin-bottom:12px">We will never ask for your password, tax number, full banking details or your access code back. We only ask for proof of payment. If you receive a message requesting those details in GigHub's name, it is fraud.</p>
+<h3 style="font-size:14px;font-weight:700;margin-bottom:8px;margin-top:20px">Your rights (GDPR)</h3>
+<p style="font-size:13px;color:var(--grey);line-height:1.7;margin-bottom:12px">Under GDPR, you have the right to access, rectify, port or erase your data, and to object to or restrict certain processing. To exercise these rights, contact us at gighubpro@gmail.com. You also have the right to lodge a complaint with a supervisory authority (in Portugal: CNPD — Comissão Nacional de Proteção de Dados).</p>`
+    },
+    terms: {
+      pt: `<h2 style="font-family:'Fraunces',serif;font-size:22px;font-weight:900;margin-bottom:20px">Termos de Utilização</h2>
+<p style="font-size:13px;color:var(--grey);margin-bottom:16px">Ao adquirir acesso ao GigHub, aceitas os seguintes termos.</p>
+<h3 style="font-size:14px;font-weight:700;margin-bottom:8px;margin-top:20px">O que é o GigHub</h3>
+<p style="font-size:13px;color:var(--grey);line-height:1.7;margin-bottom:12px">O GigHub é uma plataforma de curadoria de oportunidades de rendimento online. Organizamos, verificamos e apresentamos plataformas legítimas num só lugar.</p>
+<h3 style="font-size:14px;font-weight:700;margin-bottom:8px;margin-top:20px">Sem garantia de ganhos</h3>
+<p style="font-size:13px;color:var(--grey);line-height:1.7;margin-bottom:12px">O GigHub não garante quaisquer ganhos, resultados ou disponibilidade de trabalho. Os valores apresentados são estimativas baseadas em médias reportadas por utilizadores.</p>
+<h3 style="font-size:14px;font-weight:700;margin-bottom:8px;margin-top:20px">Responsabilidade do utilizador</h3>
+<p style="font-size:13px;color:var(--grey);line-height:1.7;margin-bottom:12px">O utilizador é responsável pelo uso que faz das plataformas listadas, pelo cumprimento dos respectivos termos de serviço, e pelas obrigações fiscais decorrentes dos seus ganhos.</p>
+<h3 style="font-size:14px;font-weight:700;margin-bottom:8px;margin-top:20px">Acesso digital</h3>
+<p style="font-size:13px;color:var(--grey);line-height:1.7;margin-bottom:12px">O acesso adquirido é pessoal, intransmissível e de longa duração. Não pode ser partilhado, revendido ou transferido.</p>
+<p style="font-size:13px;color:var(--grey);line-height:1.7;margin-bottom:12px">Por razões de segurança e prevenção de fraude, a atividade de acesso associada a cada token pode ser monitorizada. Tokens com padrões de utilização suspeitos, partilhados ou abusivos poderão ser revogados permanentemente, sem direito a reembolso.</p>
+<h3 style="font-size:14px;font-weight:700;margin-bottom:8px;margin-top:20px">Sem reembolsos</h3>
+<p style="font-size:13px;color:var(--grey);line-height:1.7;margin-bottom:12px">Dado o carácter digital do serviço e o início imediato do acesso após confirmação, o utilizador aceita renunciar ao direito de livre resolução previsto na legislação aplicável. Após a entrega do acesso, não são efectuados reembolsos.</p>`,
+      en: `<h2 style="font-family:'Fraunces',serif;font-size:22px;font-weight:900;margin-bottom:20px">Terms of Use</h2>
+<p style="font-size:13px;color:var(--grey);margin-bottom:16px">By purchasing access to GigHub, you agree to the following terms.</p>
+<h3 style="font-size:14px;font-weight:700;margin-bottom:8px;margin-top:20px">What is GigHub</h3>
+<p style="font-size:13px;color:var(--grey);line-height:1.7;margin-bottom:12px">GigHub is a curation platform for online earning opportunities. We organise, verify and present legitimate platforms in one place.</p>
+<h3 style="font-size:14px;font-weight:700;margin-bottom:8px;margin-top:20px">No earnings guarantee</h3>
+<p style="font-size:13px;color:var(--grey);line-height:1.7;margin-bottom:12px">GigHub does not guarantee any earnings, results or work availability. Values shown are estimates based on user-reported averages.</p>
+<h3 style="font-size:14px;font-weight:700;margin-bottom:8px;margin-top:20px">User responsibility</h3>
+<p style="font-size:13px;color:var(--grey);line-height:1.7;margin-bottom:12px">The user is responsible for their use of the listed platforms, compliance with their respective terms of service, and any tax obligations arising from their earnings.</p>
+<h3 style="font-size:14px;font-weight:700;margin-bottom:8px;margin-top:20px">Digital access</h3>
+<p style="font-size:13px;color:var(--grey);line-height:1.7;margin-bottom:12px">Access is personal and non-transferable. It cannot be shared, resold or transferred.</p>
+<p style="font-size:13px;color:var(--grey);line-height:1.7;margin-bottom:12px">For security and anti-abuse purposes, access activity associated with each token may be monitored. Tokens showing suspicious, shared or abusive usage patterns may be permanently revoked, without refund.</p>
+<h3 style="font-size:14px;font-weight:700;margin-bottom:8px;margin-top:20px">No refunds</h3>
+<p style="font-size:13px;color:var(--grey);line-height:1.7;margin-bottom:12px">Given the digital nature of the service and the immediate start of access upon confirmation, the user agrees to waive the right of withdrawal provided by applicable legislation. Once access has been delivered, no refunds are issued.</p>`
+    },
+    disclaimer: {
+      pt: `<h2 style="font-family:'Fraunces',serif;font-size:22px;font-weight:900;margin-bottom:20px">Disclaimer</h2>
+<p style="font-size:13px;color:var(--grey);line-height:1.7;margin-bottom:16px">A GigHub funciona como uma plataforma de curadoria e organização de oportunidades online. Não garantimos ganhos, resultados ou disponibilidade de trabalho nas plataformas apresentadas.</p>
+<p style="font-size:13px;color:var(--grey);line-height:1.7;margin-bottom:16px">Embora todas as plataformas sejam revistas manualmente, a GigHub não pode garantir a segurança, disponibilidade ou práticas das plataformas de terceiros listadas no website.</p>
+<p style="font-size:13px;color:var(--grey);line-height:1.7;">Todas as plataformas listadas pertencem aos respetivos proprietários. A GigHub não é afiliada, parceira oficial ou representante das plataformas mencionadas, salvo indicação em contrário.</p>`,
+      en: `<h2 style="font-family:'Fraunces',serif;font-size:22px;font-weight:900;margin-bottom:20px">Disclaimer</h2>
+<p style="font-size:13px;color:var(--grey);line-height:1.7;margin-bottom:16px">GigHub operates as a curation and organisation platform for online opportunities. We do not guarantee earnings, results or work availability on the platforms presented.</p>
+<p style="font-size:13px;color:var(--grey);line-height:1.7;margin-bottom:16px">Although all platforms are manually reviewed, GigHub cannot guarantee the security, availability or practices of third-party platforms listed on the website.</p>
+<p style="font-size:13px;color:var(--grey);line-height:1.7;">All listed platforms belong to their respective owners. GigHub is not affiliated with, an official partner of, or representative of the mentioned platforms, unless otherwise stated.</p>`
+    }
+  };
+  content.innerHTML = pages[type][currentLang] || pages[type]['pt'];
+  modal.style.display = 'flex';
+}
+
+// Update footer links language
+function updateFooterLang() {
+  const isEn = currentLang === 'en';
+  const fp = document.getElementById('footerPrivacy');
+  const ft = document.getElementById('footerTerms');
+  const fd = document.getElementById('footerDisclaimer');
+  const fc = document.getElementById('footerContact');
+  if(fp) fp.textContent = isEn ? 'Privacy Policy' : 'Política de Privacidade';
+  if(ft) ft.textContent = isEn ? 'Terms of Use' : 'Termos de Utilização';
+  if(fd) fd.textContent = isEn ? 'Disclaimer' : 'Disclaimer';
+  if(fc) fc.textContent = isEn ? 'Contact' : 'Contacto';
+}
+
+
+  // session timeout moved to _bindEvents()
+
+// auto-unlock moved to _bindEvents()
+// scroll handler lives in _bindEvents() below
+
+// ══════════════════════════════════════════════════════════════════
+// EVENT LISTENERS — All inline handlers migrated here (CSP fix)
+// ══════════════════════════════════════════════════════════════════
+(function _bindEvents(){
+  try {
+
+  // ── Lock screen ──
+  const lockInput = document.getElementById('lockInput');
+  if(lockInput) lockInput.addEventListener('keydown', e => { if(e.key === 'Enter') window.unlock(); });
+  const lockBtn = document.getElementById('lockBtn');
+  if(lockBtn) lockBtn.addEventListener('click', () => window.unlock());
+  const lockLangBtn = document.getElementById('lockLangBtn');
+  if(lockLangBtn) lockLangBtn.addEventListener('click', toggleLockLang);
+
+  // ── Lock screen privacy link (static HTML) ──
+  const lockPrivacyLink = document.getElementById('lockPrivacyLink');
+  if(lockPrivacyLink) lockPrivacyLink.addEventListener('click', e => { e.preventDefault(); openLegalModal('privacy'); });
+
+  // ── Nav ──
+  const langToggle = document.getElementById('langToggle');
+  if(langToggle) langToggle.addEventListener('click', toggleLang);
+  const favBtn = document.getElementById('favBtn');
+  if(favBtn) favBtn.addEventListener('click', toggleFavView);
+  const calcIconBtn = document.getElementById('calcIconBtn');
+  if(calcIconBtn) calcIconBtn.addEventListener('click', openCalc);
+  const boostNavBtn = document.getElementById('boostNavBtn');
+  if(boostNavBtn) boostNavBtn.addEventListener('click', openBoostPay);
+
+  // ── Toolbar filters ──
+  const searchEl = document.getElementById('search');
+  if(searchEl){ let _st; searchEl.addEventListener('input', () => { clearTimeout(_st); _st = setTimeout(render, 150); }); }
+  const fGeo = document.getElementById('fGeo');
+  if(fGeo) fGeo.addEventListener('change', render);
+  const fSort = document.getElementById('fSort');
+  if(fSort) fSort.addEventListener('change', render);
+
+  // ── Category tabs (event delegation) ──
+  const tabsEl = document.getElementById('tabs');
+  if(tabsEl) tabsEl.addEventListener('click', e => {
+    const tab = e.target.closest('.tab');
+    if(tab) setTab(tab.dataset.v);
+  });
+
+  // ── Curation pills (event delegation) ──
+  const curationPills = document.getElementById('curationPills');
+  if(curationPills) curationPills.addEventListener('click', e => {
+    const pill = e.target.closest('.curation-pill');
+    if(pill) setCuration(pill.dataset.curation);
+  });
+
+  // ── Platform grid (event delegation) ──
+  const grid = document.getElementById('grid');
+  if(grid) grid.addEventListener('click', function(e) {
+    const favBtn = e.target.closest('.fav-btn');
+    if(favBtn) { e.stopPropagation(); toggleFav(favBtn.dataset.name, e); return; }
+    const clearBtn = e.target.closest('.clear-filters-btn');
+    if(clearBtn) {
+      document.getElementById('search').value = '';
+      activeTab = ''; activeCuration = '';
+      document.querySelectorAll('.tab').forEach(t => t.classList.toggle('active', t.dataset.v === ''));
+      document.querySelectorAll('.curation-pill').forEach(p => p.classList.toggle('active', p.dataset.curation === ''));
+      render();
+      return;
+    }
+    // Open platform URL when clicking card body (not buttons or links)
+    if(!e.target.closest('a') && !e.target.closest('button')) {
+      const card = e.target.closest('.card[data-url]');
+      if(card && card.dataset.url) {
+        // Validate URL scheme before opening (defense in depth against data: / javascript:)
+        const _u = card.dataset.url;
+        if(_u.startsWith('https://') || _u.startsWith('http://')) {
+          const w = window.open(_u, '_blank', 'noopener,noreferrer');
+          if(w) w.opener = null;
+        }
+      }
+    }
+  });
+  // Keyboard: Enter key on card opens URL
+  if(grid) grid.addEventListener('keydown', function(e) {
+    if(e.key === 'Enter') {
+      const card = e.target.closest('.card[data-url]');
+      if(card && card.dataset.url) {
+        const _u = card.dataset.url;
+        if(_u.startsWith('https://') || _u.startsWith('http://')) {
+          const w = window.open(_u, '_blank', 'noopener,noreferrer');
+          if(w) w.opener = null;
+        }
+      }
+    }
+  });
+
+  // ── Calculator modal ──
+  const calcModalCloseBtn = document.getElementById('calcModalCloseBtn');
+  if(calcModalCloseBtn) calcModalCloseBtn.addEventListener('click', () => document.getElementById('calcModal').style.display = 'none');
+  const hoursRange = document.getElementById('hoursRange');
+  if(hoursRange) hoursRange.addEventListener('input', calcEarnings);
+  const calcType = document.getElementById('calcType');
+  if(calcType) calcType.addEventListener('change', calcEarnings);
+
+  // ── Welcome modal ──
+  const welcomeCloseBtn = document.getElementById('welcomeCloseBtn');
+  if(welcomeCloseBtn) welcomeCloseBtn.addEventListener('click', () => document.getElementById('welcomeModal').style.display = 'none');
+  const boostCtaEl = document.getElementById('boostCtaEl');
+  if(boostCtaEl) boostCtaEl.addEventListener('click', () => { openBoostPay(); document.getElementById('welcomeModal').style.display = 'none'; });
+
+  // ── GigBoost pay modal ──
+  const boostPayModalCloseBtn = document.getElementById('boostPayModalCloseBtn');
+  if(boostPayModalCloseBtn) boostPayModalCloseBtn.addEventListener('click', () => document.getElementById('boostPayModal').style.display = 'none');
+  const boostOpenFormBtn = document.getElementById('boostOpenFormBtn');
+  if(boostOpenFormBtn) boostOpenFormBtn.addEventListener('click', () => { document.getElementById('boostPayModal').style.display = 'none'; openBoostForm(); });
+
+  // ── GigBoost form (event delegation — content is dynamically injected) ──
+  const boostFormBox = document.getElementById('boostFormBox');
+  if(boostFormBox){
+    boostFormBox.addEventListener('change', function(e) {
+      const sel = e.target.closest('select.boost-select');
+      if(sel) { boostAnswers[sel.dataset.key] = sel.value; boostCheckNext(); }
+    });
+    boostFormBox.addEventListener('click', function(e) {
+      if(e.target.closest('.boost-radio')) { const r = e.target.closest('.boost-radio'); boostSelectRadio(r.dataset.key, r.dataset.val, r); return; }
+      if(e.target.closest('.boost-chip')) { boostToggleChip(e.target.closest('.boost-chip')); return; }
+      if(e.target.closest('.boost-btn-back')) { boostBack(); return; }
+      if(e.target.closest('.boost-btn-next')) { boostNext(); return; }
+      if(e.target.closest('.boost-btn-ai')) { submitBoostForm(); return; }
+      if(e.target.closest('.boost-close-modal-btn')) { document.getElementById('boostFormModal').style.display = 'none'; return; }
+      if(e.target.closest('.boost-redo-btn')) { boostStep = 0; renderBoostStep(); return; }
+      if(e.target.closest('.boost-explore-btn')) { document.getElementById('boostFormModal').style.display = 'none'; return; }
+      if(e.target.closest('.boost-retry-btn')) { openBoostForm(); return; }
+    });
+  }
+
+  // ── Legal modal ──
+  const legalModal = document.getElementById('legalModal');
+  if(legalModal) {
+    legalModal.addEventListener('click', e => { if(e.target === legalModal) legalModal.style.display = 'none'; });
+  }
+  const legalModalCloseBtn = document.getElementById('legalModalCloseBtn');
+  if(legalModalCloseBtn) legalModalCloseBtn.addEventListener('click', () => document.getElementById('legalModal').style.display = 'none');
+
+  // ── Footer & global data-modal delegation ──
+  document.addEventListener('click', function(e) {
+    const link = e.target.closest('[data-modal]');
+    if(link) { e.preventDefault(); openLegalModal(link.dataset.modal); return; }
+  });
+
+  // ── Back to top ──
+  const backToTop = document.getElementById('backToTop');
+  if(backToTop) backToTop.addEventListener('click', () => window.scrollTo({top:0, behavior:'smooth'}));
+
+  // ── Admin panel static buttons ──
+  const admAddBoostTokenBtn = document.getElementById('admAddBoostTokenBtn');
+  if(admAddBoostTokenBtn) admAddBoostTokenBtn.addEventListener('click', admAddBoostToken);
+  const admCopyBoostCodeBtn = document.getElementById('boostCopyBtn');
+  if(admCopyBoostCodeBtn) admCopyBoostCodeBtn.addEventListener('click', admCopyBoostCode);
+  const admDownloadBoostBtn = document.getElementById('admDownloadBoostBtn');
+  if(admDownloadBoostBtn) admDownloadBoostBtn.addEventListener('click', () => typeof admDownloadWithBoost === 'function' && admDownloadWithBoost());
+
+  // ── Admin panel adm-list event delegation (dynamic admRender content) ──
+  const admList = document.getElementById('adm-list');
+  if(admList) admList.addEventListener('click', function(e) {
+    const btn = e.target.closest('[data-action]');
+    if(!btn) return;
+    if(btn.dataset.action === 'saveSheetUrl') saveSheetUrl();
+    else if(btn.dataset.action === 'copyBaseLink') navigator.clipboard.writeText(window.location.origin + window.location.pathname + '#key=');
+  });
+
+  // ── Welcome & calc modals close on backdrop click ──
+  ['welcomeModal','calcModal'].forEach(id => {
+    const el = document.getElementById(id);
+    if(el) el.addEventListener('click', e => { if(e.target === el) el.style.display = 'none'; });
+  });
+
+  // ── Session timeout: warn at 1h50min inactivity, reload at 2h ──
+  let _lastActivity = Date.now();
+  let _timeoutWarned = false;
+  let _activityThrottle = null;
+  const _updateActivity = () => { _lastActivity = Date.now(); _timeoutWarned = false; };
+  document.addEventListener('click', _updateActivity);
+  document.addEventListener('keydown', () => {
+    if(_activityThrottle) return;
+    _activityThrottle = setTimeout(()=>{ _updateActivity(); _activityThrottle=null; }, 5000);
+  });
+  setInterval(() => {
+    if(!hasAccess) return;
+    const idle = Date.now() - _lastActivity;
+    if(idle > 6600000 && !_timeoutWarned) { // 110 min — warn 10 min before
+      _timeoutWarned = true;
+      const msg = currentLang==='en'
+        ? 'Your session expires in 10 minutes due to inactivity. Click anywhere to stay connected.'
+        : 'A tua sessão expira em 10 minutos por inatividade. Clica em qualquer lugar para continuar.';
+      const errEl = document.getElementById('lockErr');
+      // Show non-intrusive notice in barCount area
+      const bc = document.getElementById('barCount');
+      if(bc){ const orig=bc.textContent; bc.style.color='var(--amber)'; bc.textContent='⏱ '+msg.substring(0,60)+'…'; setTimeout(()=>{bc.style.color='';bc.textContent=orig;},8000); }
+    }
+    if(idle > 7200000) { location.reload(); } // 2h — hard reload
+  }, 60000);
+
+  // ── Scroll: tab collapse + back-to-top ──
+  window.addEventListener('scroll', function(){
+    const btn = document.getElementById('backToTop');
+    if(btn) btn.style.display = window.scrollY > 400 ? 'flex' : 'none';
+    if(_tabClickLock) return;
+    const tabsWrapEl = document.getElementById('tabsWrap');
+    if(!tabsWrapEl) return;
+    const y = window.scrollY;
+    const delta = y - _tabScrollLastY;
+    _tabScrollLastY = y;
+    if(Math.abs(delta) < 10) return; // increased threshold to prevent micro-jitter glitch
+    const isCollapsed = tabsWrapEl.classList.contains('collapsed');
+    // Only toggle if not already in the target state — prevents layout-shift re-trigger
+    if(delta > 0 && y > 120 && !isCollapsed) tabsWrapEl.classList.add('collapsed');
+    else if(delta < 0 && isCollapsed) tabsWrapEl.classList.remove('collapsed');
+  }, {passive:true});
+
+  // ── Init ──
+  document.getElementById('favCount').textContent = favs.length;
+  // Lock body scroll while lock screen is visible (prevents background scroll on mobile)
+  const _ls0 = document.getElementById('lockScreen');
+  if(_ls0 && !_ls0.classList.contains('unlocked')) document.body.style.overflow = 'hidden';
+  const yearEl = document.getElementById('heroYear');
+  if(yearEl) yearEl.textContent = new Date().getFullYear();
+  // Set initial active state for curation pills ('Todas' pill)
+  document.querySelectorAll('.curation-pill').forEach(el=>
+    el.classList.toggle('active', el.dataset.curation===''));
+  // Initialize lock screen text to current language
+  applyLockLang();
+  render();
+
+  // ── Auto-unlock from URL hash ──
+  // Handles: #key=TOKEN (normal access) and #admin=SECRET (admin UI, hash-protected)
+  (async function() {
+    const urlParams = new URLSearchParams(window.location.hash.slice(1));
+    const t = urlParams.get('key');
+    if(t) { await validarTokenSupabase(t); return; }
+
+    // Admin UI: only shown if #admin= matches the expected SHA-256 hash.
+    // To rotate: choose a new passphrase, compute sha256(passphrase), update the hash below.
+    const _ADMIN_HASH = '4e8b7b493f615434b909c3862e39d613c353e9e4f55e0740ca6a7bc5d2c02a09';
+    const adminParam = urlParams.get('admin');
+    if(adminParam) {
+      const h = await _sha256hex(adminParam);
+      if(h === _ADMIN_HASH) { showAdminLogin(); return; }
+    }
+
+    // No URL token — show password mode
+    showPasswordMode();
+    applyLockLang();
+  })();
+
+  } catch(e) { console.error('[GigHub] _bindEvents error:', e); }
+})();
