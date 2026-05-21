@@ -1,0 +1,442 @@
+<!DOCTYPE html>
+<html lang="pt" id="htmlRoot">
+<head>
+<meta charset="UTF-8">
+<meta name="referrer" content="no-referrer">
+<!-- Security headers (X-Frame-Options, X-Content-Type-Options, CSP, HSTS) are set
+     via HTTP response headers in _headers / netlify.toml / Cloudflare Transform Rules.
+     The <meta http-equiv> equivalents below are kept only as a defence-in-depth fallback
+     for browsers that happen to respect them (most don't for X-Frame-Options). -->
+<meta http-equiv="X-Content-Type-Options" content="nosniff">
+<meta http-equiv="X-Frame-Options" content="DENY">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js; style-src 'self' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data:; connect-src 'self' https://*.supabase.co; form-action 'none'; base-uri 'self'; object-src 'none'; worker-src 'none'; manifest-src 'none'; frame-src 'none'; frame-ancestors 'none'; upgrade-insecure-requests;">
+<!-- NOTE: 'unsafe-inline' removed from style-src — styles are now in styles.css (loaded via 'self').
+     Inline style= attributes in JS-generated cards must be progressively converted to CSS classes
+     to fully comply. Until then, add 'unsafe-inline' only at the server-level HTTP header if needed. -->
+<!-- SRI: integrity hash below must be updated if the @2 version ever resolves to a new release.
+     To regenerate: curl -s https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js | openssl dgst -sha384 -binary | openssl base64 -A
+     Then set integrity="sha384-<hash>" on the script tag below.
+     Current hash was last verified: May 2025. Re-verify before any production deployment. -->
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"
+        integrity="sha384-dzQgxMPp/h+N0t5qDf6Bp516wKZr3pXgGMpA7/ZM6tiWkqYo90N060L03dxnZ8Tf"
+        crossorigin="anonymous" defer></script>
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>GigHub — +100 Plataformas para Ganhar Dinheiro Online | Portugal & Brasil</title>
+<meta name="description" content="GigHub: +100 plataformas verificadas para ganhar dinheiro online em Portugal e Brasil. Surveys pagos, freelance, treino de IA, gigs físicos, pet sitting, babysitting e mais. Acesso privado, curado e testado.">
+<meta name="keywords" content="ganhar dinheiro online Portugal, ganhar dinheiro internet Brasil, surveys pagos Portugal, plataformas freelance Portugal, trabalho online casa, renda extra online, gig economy Portugal, treino IA pago, pet sitting online, babysitting plataforma">
+<meta name="author" content="GigHub">
+<meta name="theme-color" content="#0c0c0d">
+<meta name="robots" content="noindex, nofollow">
+<meta http-equiv="Cache-Control" content="no-store, no-cache, must-revalidate">
+<meta http-equiv="Pragma" content="no-cache">
+<meta property="og:title" content="GigHub — +100 Plataformas para Ganhar Dinheiro Online">
+<meta property="og:description" content="+100 plataformas verificadas para ganhar dinheiro online. Surveys, freelance, treino IA, gigs, pet sitting e babysitting. Para Portugal, Brasil e Europa.">
+<meta property="og:type" content="website">
+<meta property="og:url" content="https://gighub.pt">
+<meta property="og:locale" content="pt_PT">
+<meta property="og:locale:alternate" content="pt_BR">
+<meta name="twitter:card" content="summary">
+<meta name="twitter:title" content="GigHub — Plataformas para Ganhar Dinheiro Online">
+<meta name="twitter:description" content="+100 plataformas verificadas: surveys, freelance, IA, gigs e mais. Portugal & Brasil.">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🚀</text></svg>">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,wght@0,300;0,600;0,900;1,300;1,900&family=Instrument+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="styles.css">
+
+</head>
+<body>
+
+<!-- ══ LOCK SCREEN ══ -->
+<div id="lockScreen">
+  <div class="lock-top">
+
+    <!-- Lang toggle on lock screen -->
+    <div style="display:flex;justify-content:flex-end;width:100%;margin-bottom:16px">
+      <button id="lockLangBtn" style="background:rgba(247,245,240,.06);border:1px solid rgba(247,245,240,.14);border-radius:20px;padding:5px 14px;color:rgba(247,245,240,.7);font-family:'Instrument Sans',sans-serif;font-size:12px;font-weight:700;cursor:pointer;letter-spacing:.08em;transition:all .15s">EN</button>
+    </div>
+
+    <div class="lock-logo">Gig<span>Hub</span></div>
+    <div class="lock-sub" id="lockSubText">Acesso Privado · Área Exclusiva</div>
+
+    <h2 class="lock-headline" id="lockHeadline">+100 plataformas<br><em>verificadas</em> num só lugar</h2>
+    <p class="lock-tagline" id="lockTagline">Surveys, freelance, treino de IA, gigs físicos e muito mais — curado e testado, em português.</p>
+
+    <!-- Stats -->
+    <div class="lock-stats">
+      <div class="lstat">
+        <div class="lstat-num">+100</div>
+        <div class="lstat-label" id="lstatLabel1">Plataformas verificadas</div>
+      </div>
+      <div class="lstat">
+        <div class="lstat-num">13</div>
+        <div class="lstat-label" id="lstatLabel2">Categorias diferentes</div>
+      </div>
+      <div class="lstat">
+        <div class="lstat-num">🔐</div>
+        <div class="lstat-label" id="lstatLabel3">Acesso único, sem subscrição</div>
+      </div>
+    </div>
+
+    <!-- Flags / geo -->
+    <div class="lock-flags" style="flex-wrap:wrap">
+      <span class="lock-flag"><span class="lock-flag-emoji">🇵🇹</span></span>
+      <span class="lock-flag"><span class="lock-flag-emoji">🇧🇷</span></span>
+      <span class="lock-flag"><span class="lock-flag-emoji">🇮🇳</span></span>
+      <span class="lock-flag"><span class="lock-flag-emoji">🇪🇺</span></span>
+      <span class="lock-flag"><span class="lock-flag-emoji">🌍</span></span>
+    </div>
+
+    <!-- Category pills — 13 tab-group categories -->
+    <div class="lock-cats">
+      <span class="lock-cat" id="lockCatSurveys">📝 Inquéritos e Estudos</span>
+      <span class="lock-cat" id="lockCatTesting">🔬 Testes de Usabilidade</span>
+      <span class="lock-cat" id="lockCatAI">🤖 Treino de IA</span>
+      <span class="lock-cat" id="lockCatMystery">🕵️ Cliente Mistério</span>
+      <span class="lock-cat" id="lockCatGPT">🎁 Get-Paid-To</span>
+      <span class="lock-cat" id="lockCatDeliveries">🚗 Entregas &amp; Condução</span>
+      <span class="lock-cat" id="lockCatSkills">🧑‍🏫 Ensino &amp; Tutorias</span>
+      <span class="lock-cat" id="lockCatCriativo">🎨 Stock &amp; Design</span>
+      <span class="lock-cat" id="lockCatContent">📱 Criação de Conteúdo</span>
+      <span class="lock-cat" id="lockCatGigs">🛠️ Biscates &amp; Eventos</span>
+      <span class="lock-cat" id="lockCatCaregiving">🫶 Caregiving</span>
+      <span class="lock-cat" id="lockCatF2F">🤝 Angariação de Fundos</span>
+      <span class="lock-cat" id="lockCatOther">💚 Outros &amp; Nicho</span>
+    </div>
+
+    <!-- Access box -->
+    <div class="lock-box">
+      <!-- Step 1 — WhatsApp CTA (primary action) -->
+      <div style="background:rgba(37,211,102,.08);border:1.5px solid rgba(37,211,102,.25);border-radius:14px;padding:18px 16px">
+        <div id="lockStep1Label" style="font-size:10px;font-weight:700;color:rgba(37,211,102,.7);letter-spacing:.14em;text-transform:uppercase;margin-bottom:6px">Como obter acesso</div>
+        <div id="lockStep1Desc" style="font-size:13px;color:rgba(247,245,240,.65);line-height:1.5;margin-bottom:14px"><!-- populated by applyLockLang() --></div>
+        <!-- WhatsApp button -->
+        <a class="wa-cta-btn" href="#" id="lockWaBtn" target="_blank" rel="noopener noreferrer"
+          style="display:flex;align-items:center;justify-content:center;gap:10px;width:100%;height:52px;border-radius:12px;background:#25D166;color:#fff;font-family:'Instrument Sans',sans-serif;font-size:15px;font-weight:700;text-decoration:none;letter-spacing:.01em;transition:opacity .15s;box-shadow:0 4px 20px rgba(37,211,102,.35)">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413z"/></svg>
+          <span id="lockWaBtn">Pedir Acesso via WhatsApp</span>
+        </a>
+      </div>
+
+      <!-- Step 2 — Enter access key (secondary action) -->
+      <div id="lockLabel" style="font-size:10px;font-weight:700;color:rgba(247,245,240,.35);letter-spacing:.14em;text-transform:uppercase;margin-top:4px;margin-bottom:6px">Já tens a tua chave de acesso?</div>
+      <input class="lock-input" id="lockInput" type="text" maxlength="64"
+        aria-label="Chave de acesso"
+        placeholder="Cola aqui a chave" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" style="display:block;font-size:14px">
+      <div class="lock-err" id="lockErr" role="alert" aria-live="assertive" aria-atomic="true"></div>
+      <button class="lock-btn" id="lockBtn" style="display:block">Entrar →</button>
+      <div class="lock-hint" id="lockHint">Chave enviada após confirmação de pagamento</div>
+
+      <!-- Anti-phishing & privacy notice -->
+      <div style="margin-top:16px;background:rgba(247,245,240,.04);border:1px solid rgba(247,245,240,.08);border-radius:10px;padding:12px 14px;font-size:11px;color:rgba(247,245,240,.35);line-height:1.6">
+        <span id="lockDisclaimerWithdrawal" style="margin-top:5px;display:block;margin-bottom:5px">⚖️ <strong style="color:rgba(247,245,240,.5)">Sem reembolso:</strong> Ao adquirir acesso, reconheces que o conteúdo digital fica disponível imediatamente e renuncias expressamente ao direito de livre resolução (Diretiva 2011/83/UE, art. 16.º al. m, transposta pelo DL 24/2014). Ver <a href="#" data-modal="terms" style="color:rgba(247,245,240,.45);text-decoration:underline">Termos</a>.</span>
+        <span id="lockDisclaimerAge" style="margin-top:5px;display:block">🔞 Este serviço destina-se a utilizadores com 18 ou mais anos. As plataformas listadas podem ter requisitos de elegibilidade próprios.</span>
+        <span id="lockDisclaimerSecurity">🔒 <strong style="color:rgba(247,245,240,.5)">Aviso de segurança:</strong> Nunca te pedimos a tua palavra-passe, NIF, dados bancários completos ou a tua chave de acesso. Pedimos apenas comprovativo de pagamento. Se receberes uma mensagem a pedir esses dados, é fraude.</span><br>
+        <span id="lockDisclaimerPrivacy" style="margin-top:5px;display:block">📲 <strong style="color:rgba(247,245,240,.5)">GigBoost:</strong> Os dados de perfil do GigBoost (opcional) são enviados via WhatsApp (Meta Platforms). Ver <a href="#" data-modal="privacy" style="color:rgba(247,245,240,.45);text-decoration:underline" id="lockPrivacyLink">Política de Privacidade</a>.</span>
+        <span id="lockDisclaimerAbuse" style="margin-top:5px;display:block">🛡️ O acesso é pessoal e intransmissível. A partilha ou uso indevido da chave pode resultar em revogação permanente sem reembolso. Ver <a href="#" data-modal="terms" style="color:rgba(247,245,240,.45);text-decoration:underline">Termos de Utilização</a>.</span>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<!-- ══ WELCOME MODAL ══ -->
+<div id="appContent" aria-hidden="true">
+<div id="welcomeModal" role="dialog" aria-modal="true" aria-labelledby="welcomeTitle" style="display:none;position:fixed;inset:0;z-index:8000;background:rgba(12,12,13,.55);backdrop-filter:blur(6px);align-items:flex-start;justify-content:center;overflow-y:auto;padding:20px 0">
+  <div style="background:var(--paper);border-radius:16px;padding:40px;max-width:440px;width:90%;box-shadow:var(--shadow-lg);position:relative">
+    <div style="font-size:36px;margin-bottom:12px">🎉</div>
+    <h2 id="welcomeTitle" style="font-family:'Fraunces',serif;font-size:26px;font-weight:900;letter-spacing:-1px;margin-bottom:8px">Bem-vindo ao GigHub</h2>
+    <p id="welcomeBody" style="font-size:14px;color:var(--grey);line-height:1.7;margin-bottom:20px">Tens acesso a <strong style="color:var(--ink)">+100 plataformas verificadas</strong> para ganhar dinheiro online — surveys, freelance, IA, gigs físicos e muito mais.<br><br>Usa os filtros para encontrar o que funciona para ti. Começa pelas marcadas como <strong style="color:#8a6820">✦ Sugestão para começar</strong>.</p>
+
+    <!-- GigBoost upsell -->
+    <div class="boost-banner" id="boostBanner">
+      <div class="boost-badge" id="boostBadgeEl">✨ Novo · GigBoost</div>
+      <div class="boost-title" id="boostTitleEl">Queres recomendações<br>personalizadas para o teu perfil?</div>
+      <div class="boost-desc" id="boostDescEl">Revemos o teu perfil e indicamos-te exatamente quais as plataformas certas para ti — com plano de ação.</div>
+      <div class="boost-features">
+        <div class="boost-feat" id="boostFeat1El">🎯 Revisão do teu perfil completo</div>
+      <div class="boost-feat" id="boostFeat2El">🏆 Top 5 plataformas com match score</div>
+        <div class="boost-feat" id="boostFeat3El">💡 Dicas de otimização personalizadas</div>
+        <div class="boost-feat" id="boostFeat4El">📅 Plano de ação para os primeiros 7 dias</div>
+        <div class="boost-feat" id="boostFeat5El">💰 Estimativa realista de ganhos para ti</div>
+      </div>
+      <div class="boost-price-row">
+        <div class="boost-price">4,99€</div>
+        <div class="boost-price-orig">9,99€</div>
+        <button class="boost-btn-cta" id="boostCtaEl">Personalizar o meu perfil →</button>
+      </div>
+    </div>
+
+    <div style="background:var(--gold-pale);border:1px solid rgba(201,168,76,.25);border-radius:10px;padding:14px 16px;margin-bottom:16px;font-size:13px;color:var(--ink)">
+      <span id="welcomeTip">⭐ <strong>Dica de membro:</strong> Marca os teus favoritos com o botão ★ em cada card. Calcula quanto podes ganhar com a calculadora no topo.</span>
+    </div>
+
+    <button id="welcomeCloseBtn" style="width:100%;height:46px;border-radius:10px;border:none;background:var(--ink);color:var(--paper);font-family:'Instrument Sans',sans-serif;font-size:14px;font-weight:600;cursor:pointer">Explorar plataformas →</button>
+  </div>
+</div>
+
+<!-- ══ GIGBOOST — PAYMENT MODAL ══ -->
+<div class="boost-overlay" id="boostPayModal" role="dialog" aria-modal="true">
+  <div class="boost-box" style="max-width:440px">
+    <button id="boostPayModalCloseBtn" style="position:absolute;top:16px;right:16px;background:var(--cream);border:1px solid var(--border-md);border-radius:8px;width:32px;height:32px;font-size:14px;cursor:pointer;color:var(--grey)">✕</button>
+    <div class="boost-badge">✨ GigBoost · 4,99€</div>
+    <h2 class="boost-step-title" id="boostPayTitleEl">Recomendações Personalizadas</h2>
+    <p class="boost-step-sub" id="boostPaySubEl">Respondemos com uma seleção personalizada de plataformas com base no teu perfil, objetivos e disponibilidade.</p>
+
+    <!-- Payment -->
+    <div style="background:#fff;border:1.5px solid var(--border);border-radius:14px;padding:20px;margin-bottom:16px">
+      <div id="boostPayLabelEl" style="font-size:11px;font-weight:700;color:var(--grey);letter-spacing:.1em;text-transform:uppercase;margin-bottom:14px">Pagamento</div>
+      <div style="display:flex;align-items:center;justify-content:space-between;background:var(--gold-pale);border:1px solid rgba(201,168,76,.25);border-radius:10px;padding:14px;margin-bottom:12px">
+        <div>
+          <div id="boostPayDescEl" style="font-size:11px;color:var(--grey);margin-bottom:3px">GigBoost — recomendações personalizadas</div>
+          <div style="font-family:'Fraunces',serif;font-size:26px;font-weight:900;color:var(--gold);letter-spacing:-1px">4,99€</div>
+        </div>
+        <div style="font-size:28px">🚀</div>
+      </div>
+      <div style="font-size:12px;color:var(--grey);line-height:1.7;margin-bottom:12px">
+        <span id="boostPayInstrEl"><!-- populated by applyLang() --></span>
+      </div>
+      <a href="#" id="boostWaBtn" target="_blank" rel="noopener noreferrer" style="display:flex;align-items:center;justify-content:center;gap:8px;height:44px;border-radius:10px;background:#25D166;color:#fff;font-family:'Instrument Sans',sans-serif;font-size:13px;font-weight:700;text-decoration:none;transition:opacity .15s;overflow:hidden;width:100%;box-sizing:border-box;padding:0 16px">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413z"/></svg>
+        <span id="boostPayBtnEl">Enviar comprovativo via WhatsApp →</span>
+      </a>
+    </div>
+
+    <!-- Open form directly after payment — requires boost token -->
+    <div style="margin-top:12px">
+      <div style="font-size:11px;font-weight:700;color:var(--grey);letter-spacing:.1em;text-transform:uppercase;margin-bottom:8px" id="boostTokenSectionLabel">Já recebeste o teu código GigBoost?</div>
+      <input id="boostTokenInput" class="boost-code-input" type="text" maxlength="20"
+        placeholder="BOOST-XXXX-XXXX" autocomplete="off" autocorrect="off" autocapitalize="characters" spellcheck="false">
+      <div class="boost-code-err" id="boostTokenErr"></div>
+      <button id="boostOpenFormBtn" style="width:100%;height:44px;border-radius:10px;border:none;background:var(--ink);color:var(--paper);font-family:'Instrument Sans',sans-serif;font-size:13px;font-weight:700;cursor:pointer">
+        Verificar código e preencher perfil →
+      </button>
+    </div>
+  </div>
+</div>
+
+<!-- ══ GIGBOOST — FORM MODAL ══ -->
+<div class="boost-overlay" id="boostFormModal" role="dialog" aria-modal="true">
+  <div class="boost-box" id="boostFormBox"><input id="_hpot" tabindex="-1" style="position:absolute;opacity:0;height:0;pointer-events:none" autocomplete="off">
+    <!-- Content injected by JS -->
+  </div>
+</div>
+
+<!-- ══ CALCULATOR MODAL ══ -->
+<div id="calcModal" role="dialog" aria-modal="true" aria-labelledby="calcTitleEl" style="display:none;position:fixed;inset:0;z-index:8000;background:rgba(12,12,13,.55);backdrop-filter:blur(6px);align-items:flex-start;justify-content:center;overflow-y:auto;padding:20px 0">
+  <div style="background:var(--paper);border-radius:16px;padding:40px;max-width:460px;width:90%;box-shadow:var(--shadow-lg)">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:20px">
+      <h2 id="calcTitleEl" style="font-family:'Fraunces',serif;font-size:22px;font-weight:900;letter-spacing:-.5px">💰 Calculadora de Ganhos</h2>
+      <button id="calcModalCloseBtn" style="background:var(--cream);border:1px solid var(--border-md);border-radius:8px;width:36px;height:36px;font-size:16px;cursor:pointer;color:var(--grey);flex-shrink:0">✕</button>
+    </div>
+    <p id="calcDescEl" style="font-size:13px;color:var(--grey);margin-bottom:20px">Quanto podes ganhar por mês combinando plataformas?</p>
+    <div style="display:flex;flex-direction:column;gap:12px;margin-bottom:20px">
+      <label id="calcHoursLabelEl" style="font-size:12px;font-weight:600;color:var(--grey);letter-spacing:.1em;text-transform:uppercase">Horas por semana disponíveis</label>
+      <input type="range" id="hoursRange" min="1" max="40" value="10" style="width:100%;accent-color:var(--gold)">
+      <div style="display:flex;justify-content:space-between;font-size:12px;color:var(--grey)"><span>1h</span><strong id="hoursVal" style="color:var(--ink);font-size:14px">10h</strong><span>40h</span></div>
+    </div>
+    <div style="display:flex;flex-direction:column;gap:8px;margin-bottom:20px">
+      <label id="calcTypeLabel" style="font-size:12px;font-weight:600;color:var(--grey);letter-spacing:.1em;text-transform:uppercase;margin-bottom:6px;display:block">Tipo de trabalho preferido</label>
+      <select id="calcType" style="height:40px;background:var(--cream);border:1px solid var(--border-md);border-radius:8px;color:var(--ink);font-family:'Instrument Sans',sans-serif;font-size:13px;padding:0 12px;outline:none;width:100%">
+        <option id="calcOpt2" value="2">Surveys &amp; Get-Paid-To (2€/h)</option>
+        <option id="calcOpt6" value="6">Entregas &amp; Condução (6€/h)</option>
+        <option id="calcOpt7" value="7">Treino de IA / Anotação (7€/h)</option>
+        <option id="calcOpt10" value="10">Tutoria, Freelance &amp; Biscates (10€/h)</option>
+        <option id="calcOpt18" value="18">Testes de Usabilidade &amp; Entrevistas UX (pagamento variável, vagas limitadas em PT)</option>
+        <option id="calcOpt8" value="8">Pet Sitting / Babysitting (8€/h)</option>
+      </select>
+    </div>
+    <div style="background:var(--ink);border-radius:12px;padding:24px;text-align:center;margin-bottom:16px">
+      <div id="calcResultLabelEl" style="font-size:12px;color:rgba(247,245,240,.4);letter-spacing:.1em;text-transform:uppercase;margin-bottom:6px">Estimativa mensal</div>
+      <div id="calcResult" style="font-family:'Fraunces',serif;font-size:48px;font-weight:900;color:var(--gold);letter-spacing:-2px">320€</div>
+    </div>
+    <div id="calcSuggest" style="font-size:12px;color:var(--grey);line-height:1.6"></div>
+  </div>
+</div>
+
+
+<nav>
+  <div>
+    <span class="nav-logo">Gig<span>Hub</span></span>
+  </div>
+  <div class="nav-right">
+    <button class="nav-pill" id="langToggle" style="font-weight:700;letter-spacing:.05em">EN</button>
+    <button class="nav-pill" id="favBtn">⭐ Favoritos (<span id="favCount">0</span>)</button>
+    <button class="nav-pill nav-pill-calc" id="calcIconBtn"><span class="nb-ico">💰</span><span class="nb-txt"> Calcular ganhos</span></button>
+    <button class="nav-pill nav-pill-boost" id="boostNavBtn"><span class="nb-ico">👨‍💻</span><span class="nb-txt"> GigBoost</span></button>
+    <a class="nav-pill" href="#guia" data-lang="navGuia">Guia</a>
+    
+
+  </div>
+</nav>
+
+<!-- HERO -->
+<section class="hero" id="plataformas">
+  <div>
+    <div class="hero-tag">✅ +100 plataformas verificadas · Atualizado <span id="heroYear">2026</span></div>
+    <h1>Ganha dinheiro<br>online, <em>de verdade.</em></h1>
+    <p class="hero-desc">Surveys académicos, freelance, micro-tarefas de IA, testes de apps, criação de conteúdo e gigs físicos. Cada plataforma verificada manualmente.</p>
+  </div>
+  <div class="hero-stat-block">
+    <div class="hstat">
+      <div class="hstat-val g" id="s-total">—</div>
+      <div class="hstat-label">Plataformas</div>
+    </div>
+    <div class="hstat">
+      <div class="hstat-val">13</div>
+      <div class="hstat-label">Categorias</div>
+    </div>
+  </div>
+</section>
+
+<!-- TOOLBAR -->
+<div class="toolbar-wrap">
+  <div class="toolbar">
+    <!-- Search + Format (single row) -->
+    <div class="toolbar-search-row">
+      <div class="search-wrap">
+        <svg class="search-icon" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
+        <input type="text" id="search" placeholder="Pesquisar plataforma…">
+      </div>
+      <div class="filter-group filter-group-format">
+        <select id="fWorkType">
+          <option value="">💼 Qualquer formato</option>
+          <option value="remote">🖥️ Remoto / Online</option>
+          <option value="f2f">🤝 Presencial</option>
+        </select>
+      </div>
+    </div>
+    <div class="tabs-wrap" id="tabsWrap"><div class="tabs" id="tabs">
+      <div class="tab active" data-v="">Todas</div>
+      <div class="tab" data-v="surveys"><span class="cdot" style="background:#0e64b4"></span>📝 Inquéritos<span class="tab-count" style="margin-left:4px;font-size:10px;opacity:.5"></span></div>
+      <div class="tab" data-v="testing"><span class="cdot" style="background:#2d7a4f"></span>🔬 Testes<span class="tab-count" style="margin-left:4px;font-size:10px;opacity:.5"></span></div>
+      <div class="tab" data-v="micro"><span class="cdot" style="background:#444"></span>🤖 Treino IA<span class="tab-count" style="margin-left:4px;font-size:10px;opacity:.5"></span></div>
+      <div class="tab" data-v="mystery"><span class="cdot" style="background:#7a3e00"></span>🕵️ Cliente Mistério<span class="tab-count" style="margin-left:4px;font-size:10px;opacity:.5"></span></div>
+      <div class="tab" data-v="gpt"><span class="cdot" style="background:#b8860b"></span>🎁 Get-Paid-To<span class="tab-count" style="margin-left:4px;font-size:10px;opacity:.5"></span></div>
+      <div class="tab" data-v="deliveries"><span class="cdot" style="background:#2d7a4f"></span>🚗 Entregas<span class="tab-count" style="margin-left:4px;font-size:10px;opacity:.5"></span></div>
+      <div class="tab" data-v="skills"><span class="cdot" style="background:#8228b4"></span>🧑‍🏫 Ensino &amp; Skills<span class="tab-count" style="margin-left:4px;font-size:10px;opacity:.5"></span></div>
+      <div class="tab" data-v="criativo"><span class="cdot" style="background:#c81e64"></span>🎨 Stock &amp; Design<span class="tab-count" style="margin-left:4px;font-size:10px;opacity:.5"></span></div>
+      <div class="tab" data-v="creative"><span class="cdot" style="background:#e03b8b"></span>📱 Conteúdo &amp; UGC<span class="tab-count" style="margin-left:4px;font-size:10px;opacity:.5"></span></div>
+      <div class="tab" data-v="gigs_events"><span class="cdot" style="background:#e84c3d"></span>🛠️ Biscates &amp; Eventos<span class="tab-count" style="margin-left:4px;font-size:10px;opacity:.5"></span></div>
+      <div class="tab" data-v="caregiving"><span class="cdot" style="background:#b85c00"></span>🫶 Caregiving<span class="tab-count" style="margin-left:4px;font-size:10px;opacity:.5"></span></div>
+      <div class="tab" data-v="f2f"><span class="cdot" style="background:#1a7a3a"></span>🤝 Angariação de Fundos<span class="tab-count" style="margin-left:4px;font-size:10px;opacity:.5"></span></div>
+      <div class="tab" data-v="other"><span class="cdot" style="background:#0a5a5a"></span>💚 Outros<span class="tab-count" style="margin-left:4px;font-size:10px;opacity:.5"></span></div>
+    </div></div>
+  </div>
+</div>
+
+
+
+<!-- MAIN -->
+<div class="main">
+  <div class="bar">
+    <div class="bar-title" id="barTitle">Todas as plataformas</div>
+    <div class="bar-count" id="barCount"></div>
+  </div>
+  <div class="grid" id="grid"></div>
+</div>
+
+<!-- GUIDE -->
+<section class="guide" id="guia">
+  <h2 id="guideH2">Como começar<br><em style="font-style:italic;color:var(--gold)">em 3 passos.</em></h2>
+  <p class="guide-sub" id="guideSub">Sem investimentos, sem riscos. Só tempo e acesso à internet.</p>
+  <div class="guide-grid">
+
+    <!-- Step 01 -->
+    <div class="guide-card" id="guideStep1Card">
+      <div class="guide-num">01</div>
+      <h3 id="guideStep1H">Regista-te gratuitamente</h3>
+      <p id="guideStep1P" style="font-size:13px;color:var(--grey);line-height:1.6">Clica "Abrir", cria conta com email. <strong style="color:var(--ink)">Nunca pagues para te registar</strong> — todas as plataformas aqui listadas são 100% gratuitas.</p>
+    </div>
+
+    <!-- Step 02 -->
+    <div class="guide-card">
+      <div class="guide-num">02</div>
+      <h3 id="guideStep2H">Configura o pagamento</h3>
+      <p id="guideStep2P" style="font-size:13px;color:var(--grey);line-height:1.6">PayPal (mais comum), transferência bancária ou gift cards. Configura no painel da conta. Levantamentos a partir de 5–25€ consoante a plataforma.</p>
+    </div>
+
+    <!-- Step 03 -->
+    <div class="guide-card">
+      <div class="guide-num">03</div>
+      <h3 id="guideStep3H">Diversifica as fontes</h3>
+      <p id="guideStep3P" style="font-size:13px;color:var(--grey);line-height:1.6">Os melhores utilizadores usam 4–6 plataformas em simultâneo. Combina surveys, IA e freelance para maximizar ganhos mensais.</p>
+    </div>
+
+  </div>
+  <div class="tip-box">
+    <p id="guideTip">
+      <strong>★ Top 3 para Portugal em 2026 —</strong>
+      <strong>AttaPoll</strong> (app de surveys, simples, paga por PayPal, disponível em PT) ·
+      <strong>Clickworker</strong> (micro-tarefas de IA, boa disponibilidade PT, entrada fácil) ·
+      <strong>Netsonda</strong> (estudos de mercado em PT, fácil de começar, sem requisitos)
+    </p>
+  </div>
+</section>
+
+<!-- MONETIZAÇÃO -->
+<section style="border-top:1px solid var(--border);background:var(--ink);padding:clamp(32px,5vw,56px) clamp(16px,5vw,40px)" id="monetizacao">
+  <div style="max-width:1200px;margin:0 auto">
+    <div style="max-width:440px;margin:0 auto;text-align:center">
+      <div id="monoTitle" style="font-family:'Fraunces',serif;font-size:20px;font-weight:900;color:var(--paper);letter-spacing:-.5px;margin-bottom:8px">Queres acesso ao GigHub?</div>
+      <p id="monoDesc" style="font-size:13px;color:rgba(247,245,240,.5);line-height:1.7;margin-bottom:20px"></p><!-- populated by applyLang() -->
+
+      <a href="#" id="monoWaLink" target="_blank" rel="noopener noreferrer" style="display:flex;align-items:center;justify-content:center;gap:8px;height:48px;border-radius:12px;background:#25D166;color:#fff;font-family:'Instrument Sans',sans-serif;font-size:14px;font-weight:700;text-decoration:none;margin-bottom:16px;transition:opacity .15s">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413z"/></svg>
+        <span id="monoWaBtn">Pedir acesso via WhatsApp →</span>
+      </a>
+
+      <div style="background:rgba(247,245,240,.04);border:1px solid rgba(247,245,240,.08);border-radius:12px;padding:16px 20px;text-align:left">
+        <div id="monoPayLabel" style="font-size:10px;color:rgba(247,245,240,.35);letter-spacing:.1em;text-transform:uppercase;margin-bottom:8px">Alternativa — Transferência bancária</div>
+        <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap">
+          <div id="ibanDisplay" style="font-size:13px;color:rgba(247,245,240,.7);font-family:monospace;letter-spacing:.03em"></div><!-- populated by JS -->
+          <button id="copyIbanBtn" style="flex-shrink:0;height:28px;padding:0 12px;border-radius:6px;border:1px solid rgba(247,245,240,.2);background:transparent;color:rgba(247,245,240,.5);font-family:'Instrument Sans',sans-serif;font-size:11px;cursor:pointer">Copiar</button>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+
+<footer>
+  <div id="footerText"><strong>GigHub</strong> · Agregador curado de plataformas legítimas · Sem afiliações pagas</div>
+  <div class="footer-right">
+    <span class="footer-lock" id="footerLock">🔐 Acesso privado</span>
+  </div>
+  <div style="flex-basis:100%;padding-top:12px;border-top:1px solid var(--border);display:flex;flex-wrap:wrap;gap:8px 20px;justify-content:center;align-items:center">
+    <a href="#" data-modal="privacy" style="font-size:11px;color:var(--grey);text-decoration:none;letter-spacing:.04em" id="footerPrivacy">Política de Privacidade</a>
+    <span style="color:var(--border-md);font-size:11px">·</span>
+    <a href="#" data-modal="terms" style="font-size:11px;color:var(--grey);text-decoration:none;letter-spacing:.04em" id="footerTerms">Termos de Utilização</a>
+    <span style="color:var(--border-md);font-size:11px">·</span>
+    <a href="#" data-modal="disclaimer" style="font-size:11px;color:var(--grey);text-decoration:none;letter-spacing:.04em" id="footerDisclaimer">Disclaimer</a>
+    <span style="color:var(--border-md);font-size:11px">·</span>
+    <a href="mailto:gighubpro@gmail.com" style="font-size:11px;color:var(--grey);text-decoration:none;letter-spacing:.04em" id="footerContact">Contacto</a>
+  </div>
+</footer>
+
+<!-- ══ LEGAL MODALS ══ -->
+<div id="legalModal" role="dialog" aria-modal="true" style="display:none;position:fixed;inset:0;z-index:10000;background:rgba(12,12,13,.7);backdrop-filter:blur(6px);align-items:flex-start;justify-content:center;overflow-y:auto;padding:20px 0">
+  <div style="background:var(--paper);border-radius:16px;padding:40px 32px;max-width:580px;width:90%;margin:auto;position:relative">
+    <button id="legalModalCloseBtn" style="position:absolute;top:16px;right:16px;background:var(--cream);border:1px solid var(--border-md);border-radius:8px;width:32px;height:32px;font-size:14px;cursor:pointer;color:var(--grey)">✕</button>
+    <div id="legalContent"></div>
+  </div>
+</div>
+
+
+
+
+
+
+<button id="backToTop" 
+  style="position:fixed;bottom:72px;right:16px;width:40px;height:40px;border-radius:50%;
+  background:var(--ink);color:var(--paper);border:none;font-size:18px;cursor:pointer;
+  display:none;z-index:945;box-shadow:0 4px 12px rgba(0,0,0,.3);transition:opacity .2s">↑</button>
+</div><!-- /#appContent -->
+<!-- GDPR / localStorage notice -->
+<div id="gdprNotice" role="region" aria-label="Aviso de armazenamento local">
+  <span id="gdprText">Este site usa armazenamento local (localStorage) para preferências, favoritos e token de acesso — sem cookies de rastreamento nem analytics de terceiros. <a href="#" data-modal="privacy">Política de Privacidade</a></span>
+  <button id="gdprOkBtn">OK, entendi</button>
+</div>
+<script src="main.js" defer></script>
+</body>
+</html>
